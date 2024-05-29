@@ -2,10 +2,15 @@ use std::{collections::HashMap, sync::RwLock};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::env;
 use uuid::Uuid;
 
 pub type Authorizations = RwLock<HashMap<String, AuthorizationState>>;
 
+const AUTHORIZATION_BASE_URL: &str =
+    "https://accounts.google.com/o/oauth2/v2/auth/oauthchooseaccount";
+
+#[derive(Debug)]
 pub struct AuthorizationState {
     state: String,
     code: Option<String>,
@@ -25,6 +30,18 @@ impl AuthorizationState {
     pub fn state(&self) -> String {
         self.state.clone()
     }
+
+    pub fn code(&self) -> Option<String> {
+        self.code.clone()
+    }
+
+    pub fn set_code(&mut self, code: String) {
+        self.code = Some(code);
+    }
+
+    pub fn set_access_token(&mut self, access_token: String) {
+        self.access_token = Some(access_token);
+    }
 }
 
 pub struct AuthorizationUrl {
@@ -35,9 +52,7 @@ pub struct AuthorizationUrl {
 impl AuthorizationUrl {
     pub fn new(params: AuthorizationParams) -> Self {
         Self {
-            endpoint: String::from(
-                "https://accounts.google.com/o/oauth2/v2/auth/oauthchooseaccount",
-            ),
+            endpoint: String::from(AUTHORIZATION_BASE_URL),
             params,
         }
     }
@@ -52,7 +67,7 @@ pub struct AuthorizationParams {
     state: Option<String>,
     scope: Option<String>,
     redirect_uri: Option<String>,
-    client_id: Option<String>,
+    client_id: String,
     access_type: String,
     include_granted_scopes: bool,
     response_type: String,
@@ -68,7 +83,7 @@ impl AuthorizationParams {
             state: None,
             scope: None,
             redirect_uri: None,
-            client_id: None,
+            client_id: env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set"),
             access_type: String::from("offline"),
             include_granted_scopes: true,
             response_type: String::from("code"),
@@ -94,11 +109,6 @@ impl AuthorizationParams {
         self
     }
 
-    pub fn with_client_id(mut self, client_id: String) -> Self {
-        self.client_id = Some(client_id);
-        self
-    }
-
     pub fn as_url(&self) -> String {
         serde_json::to_value(&self)
             .unwrap()
@@ -115,5 +125,26 @@ impl AuthorizationParams {
                 Value::Bool(bool) => format!("{}&{}={}", params, param, bool),
                 _ => params,
             })
+    }
+}
+
+#[derive(Deserialize)]
+pub struct AuthorizationCodeRequestPayload {
+    id: String,
+    state: String,
+    code: String,
+}
+
+impl AuthorizationCodeRequestPayload {
+    pub fn id(&self) -> String {
+        self.id.clone()
+    }
+
+    pub fn state(&self) -> String {
+        self.state.clone()
+    }
+
+    pub fn code(&self) -> String {
+        self.code.clone()
     }
 }

@@ -1,20 +1,25 @@
-use actix_web::{web::Data, HttpResponse, Responder};
-use std::env;
+use actix_web::{
+    web::{Data, Json},
+    HttpResponse, Responder,
+};
+use tokio::sync::mpsc::UnboundedSender;
 
-use crate::authorization::types::{
-    AuthorizationParams, AuthorizationState, AuthorizationUrl, Authorizations,
+use crate::{
+    authorization::types::{
+        AuthorizationCodeRequestPayload, AuthorizationParams, AuthorizationState, AuthorizationUrl,
+        Authorizations,
+    },
+    REDIRECT_URI,
 };
 
 const RESOURCES: [&str; 3] = ["myactivity.search", "myactivity.maps", "myactivity.youtube"];
 const DATA_PORTABILITY_BASE_URL: &str = "https://www.googleapis.com/auth/dataportability.";
-const REDIRECT_URI: &str = "http://localhost:3000/callback";
 
 pub async fn get_google_oauth_url(id: String, auth: Data<Authorizations>) -> impl Responder {
     let auth_state = AuthorizationState::new();
 
     let params = AuthorizationParams::default()
         .with_state(auth_state.state())
-        .with_client_id(env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set"))
         .with_scope(
             RESOURCES
                 .map(|r| format!("{}{}", DATA_PORTABILITY_BASE_URL, r))
@@ -23,9 +28,12 @@ pub async fn get_google_oauth_url(id: String, auth: Data<Authorizations>) -> imp
         .with_redirect_uri(REDIRECT_URI.to_string());
     let auth_url = AuthorizationUrl::new(params).as_url();
 
-    auth.write().unwrap().insert(id, auth_state);
+    println!(
+        "Client with ID: {} requested authorization URL: {}",
+        id, auth_url
+    );
 
-    println!("Authorization URL: {}", auth_url);
+    auth.write().unwrap().insert(id, auth_state);
 
     HttpResponse::Ok().body(format!(
         "Client can start authorization flow at: {}",
@@ -34,9 +42,35 @@ pub async fn get_google_oauth_url(id: String, auth: Data<Authorizations>) -> imp
 }
 
 pub async fn post_google_authorization_code(
-    auth_code: String,
+    payload: Json<AuthorizationCodeRequestPayload>,
     auth: Data<Authorizations>,
+    auth_code_tx: Data<UnboundedSender<String>>,
 ) -> impl Responder {
-    // TODO
-    HttpResponse::Ok()
+    let id = payload.id();
+    if let Some(auth_state) = auth.write().unwrap().get_mut(&id) {
+        if auth_state.state() != payload.state() {
+            println!(
+                "Client with ID: {} sent invalid state. Expected: {}, got: {}",
+                id,
+                auth_state.state(),
+                payload.state()
+            );
+            return HttpResponse::BadRequest();
+        }
+
+        let auth_code = payload.code();
+
+        println!(
+            "Client with ID: {} posted authorization code: {}",
+            id, auth_code
+        );
+        auth_state.set_code(auth_code);
+
+        auth_code_tx.send(id).unwrap();
+
+        return HttpResponse::Ok();
+    }
+
+    println!("Client with ID: {} not found", id);
+    HttpResponse::BadRequest()
 }

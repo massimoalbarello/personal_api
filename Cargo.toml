@@ -8,6 +8,8 @@ edition = "2021"
 [dependencies]
 uuid = { version = "1.8.0", features = ["v4", "fast-rng"] }
 actix-web = "4"
+reqwest = { version = "0.11", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 dotenv = "0.15.0"
+tokio = { version = "1", features = ["full"] }
