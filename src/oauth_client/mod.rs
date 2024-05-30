@@ -1,13 +1,14 @@
 use std::{collections::HashMap, sync::RwLock};
 
-use actix_web::web::Data;
+use actix_web::{web::Data, Result};
 use futures::future::join_all;
 use reqwest::Client;
 use tokio::time::{interval, Duration};
 use types::{
     AccessTokenParams, AccessTokenResponsePayload, AccessTokenUrl, GetArchiveStateParams,
     GetArchiveStateResponsePayload, GetArchiveStateUrl, InitiateArchiveParams,
-    InitiateArchiveResponsePayload, InitiateArchiveUrl,
+    InitiateArchiveResponsePayload, InitiateArchiveUrl, ResetAuthorizationParams,
+    ResetAuthorizationResponsePayload, ResetAuthorizationUrl,
 };
 
 use crate::{authorization::types::AuthorizationState, REDIRECT_URI, RESOURCES};
@@ -87,7 +88,10 @@ impl OAuthClient {
         Ok(())
     }
 
-    pub async fn get_data_archive_urls(&self, client_id: String) {
+    pub async fn get_data_archive_urls(
+        &self,
+        client_id: String,
+    ) -> Result<Vec<Result<String, String>>, String> {
         let initiated_data_archives = RESOURCES
             .iter()
             .map(|&resource| self.initiate_data_archive(client_id.clone(), resource.to_string()));
@@ -105,7 +109,7 @@ impl OAuthClient {
 
         let download_urls = join_all(poll_archive_states).await;
 
-        println!("Download URLs: {:?}", download_urls);
+        Ok(download_urls)
     }
 
     async fn initiate_data_archive(
@@ -152,6 +156,14 @@ impl OAuthClient {
     ) -> Result<String, String> {
         let params = GetArchiveStateParams::default();
         let poll_archive_state_url = GetArchiveStateUrl::new(job_id.clone(), params).as_url();
+        let access_token = self
+            .authorizations
+            .read()
+            .unwrap()
+            .get(&client_id)
+            .unwrap()
+            .access_token()
+            .unwrap();
 
         let mut interval = interval(Duration::from_secs(10));
 
@@ -159,19 +171,10 @@ impl OAuthClient {
             println!("Checking state for job ID: {}", job_id);
             interval.tick().await;
 
-            let access_token = self
-                .authorizations
-                .read()
-                .unwrap()
-                .get(&client_id)
-                .unwrap()
-                .access_token()
-                .unwrap();
-
             let response = self
                 .client
                 .get(poll_archive_state_url.clone())
-                .bearer_auth(access_token)
+                .bearer_auth(access_token.clone())
                 .header("Content-Length", 0) // otherwise the server returns 411
                 .send()
                 .await
@@ -199,5 +202,34 @@ impl OAuthClient {
                 }
             }
         }
+    }
+
+    pub async fn reset_authorization(&self, client_id: String) -> Result<(), String> {
+        let params = ResetAuthorizationParams::default();
+        let reset_authorization_url = ResetAuthorizationUrl::new(params).as_url();
+
+        let access_token = self
+            .authorizations
+            .read()
+            .unwrap()
+            .get(&client_id)
+            .unwrap()
+            .access_token()
+            .unwrap();
+
+        let response = self
+            .client
+            .post(reset_authorization_url)
+            .bearer_auth(access_token)
+            .header("Content-Length", 0) // otherwise the server returns 411
+            .send()
+            .await
+            .unwrap();
+
+        let _: ResetAuthorizationResponsePayload = response.json().await.unwrap();
+
+        println!("Reset authorization for client ID: {}", client_id);
+
+        Ok(())
     }
 }

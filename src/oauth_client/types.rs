@@ -7,6 +7,7 @@ const ARCHIVE_BASE_URL: &str = "https://dataportability.googleapis.com/v1beta/";
 const INITIATE_ARCHIVE_ENDPOINT: &str = "portabilityArchive:initiate";
 const ARCHIVE_JOBS_ENDPOINT: &str = "archiveJobs/";
 const POLL_ARCHIVE_STATE_ENDPOINT: &str = "/portabilityArchiveState";
+const RESET_AUTHORIZATION_ENDPOINT: &str = "authorization:reset";
 
 pub struct AccessTokenUrl {
     endpoint: String,
@@ -213,6 +214,7 @@ impl GetArchiveStateParams {
             })
     }
 }
+
 #[derive(Debug)]
 pub enum GetArchiveStateResponsePayload {
     Completed(ArchiveCompleteResponsePayload),
@@ -265,3 +267,54 @@ impl ArchiveInProgressResponsePayload {
         self.state.clone()
     }
 }
+
+pub struct ResetAuthorizationUrl {
+    endpoint: String,
+    params: ResetAuthorizationParams,
+}
+
+impl ResetAuthorizationUrl {
+    pub fn new(params: ResetAuthorizationParams) -> Self {
+        Self {
+            endpoint: format!("{}{}", ARCHIVE_BASE_URL, RESET_AUTHORIZATION_ENDPOINT),
+            params,
+        }
+    }
+
+    pub fn as_url(&self) -> String {
+        format!("{}?{}", self.endpoint, self.params.as_url())
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ResetAuthorizationParams {
+    alt: String,
+}
+
+impl ResetAuthorizationParams {
+    pub fn default() -> Self {
+        Self {
+            alt: String::from("json"),
+        }
+    }
+
+    pub fn as_url(&self) -> String {
+        serde_json::to_value(&self)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .iter()
+            .fold(String::new(), |params, (param, value)| match value {
+                Value::String(value) => {
+                    if !params.is_empty() {
+                        return format!("{}&{}={}", params, param, value);
+                    }
+                    format!("{}={}", param, value)
+                }
+                _ => params,
+            })
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ResetAuthorizationResponsePayload {}
