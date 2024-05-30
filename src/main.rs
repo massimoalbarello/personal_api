@@ -52,7 +52,7 @@ async fn main() {
 
                 // convert authorization code to access token
                 if let Ok(()) = oauth_client.convert_authorization_to_access_token(id.clone()).await {
-                    oauth_client.get_data_transfer_urls(id).await;
+                    oauth_client.get_data_archive_urls(id).await;
                 }
 
             }

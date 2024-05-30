@@ -1,11 +1,13 @@
-use std::env;
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::env;
 
 const ACCESS_TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
-const TRANSFER_BASE_URL: &str = "https://dataportability.googleapis.com/v1beta/";
-const INITIATE_TRANSFER_ENDPOINT: &str = "portabilityArchive:initiate";
+const ARCHIVE_BASE_URL: &str = "https://dataportability.googleapis.com/v1beta/";
+const INITIATE_ARCHIVE_ENDPOINT: &str = "portabilityArchive:initiate";
+const ARCHIVE_JOBS_ENDPOINT: &str = "archiveJobs/";
+const GET_ARCHIVE_STATE_ENDPOINT: &str = "/portabilityArchiveState";
+
 pub struct AccessTokenUrl {
     endpoint: String,
     params: AccessTokenParams,
@@ -94,15 +96,15 @@ impl AccessTokenResponsePayload {
     }
 }
 
-pub struct InitiateTransferUrl {
+pub struct InitiateArchiveUrl {
     endpoint: String,
-    params: InitiateTransferParams,
+    params: InitiateArchiveParams,
 }
 
-impl InitiateTransferUrl {
-    pub fn new(params: InitiateTransferParams) -> Self {
+impl InitiateArchiveUrl {
+    pub fn new(params: InitiateArchiveParams) -> Self {
         Self {
-            endpoint: String::from(TRANSFER_BASE_URL) + INITIATE_TRANSFER_ENDPOINT,
+            endpoint: String::from(ARCHIVE_BASE_URL) + INITIATE_ARCHIVE_ENDPOINT,
             params,
         }
     }
@@ -113,12 +115,12 @@ impl InitiateTransferUrl {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct InitiateTransferParams {
+pub struct InitiateArchiveParams {
     resources: Option<String>,
     alt: String,
 }
 
-impl InitiateTransferParams {
+impl InitiateArchiveParams {
     pub fn default() -> Self {
         Self {
             resources: None,
@@ -150,13 +152,80 @@ impl InitiateTransferParams {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct InitiateTransferResponsePayload {
+pub struct InitiateArchiveResponsePayload {
     #[serde(rename = "archiveJobId")]
     archive_job_id: String,
 }
 
-impl InitiateTransferResponsePayload {
+impl InitiateArchiveResponsePayload {
     pub fn archive_job_id(&self) -> String {
         self.archive_job_id.clone()
+    }
+}
+
+pub struct GetArchiveStateUrl {
+    endpoint: String,
+    params: GetArchiveStateParams,
+}
+
+impl GetArchiveStateUrl {
+    pub fn new(job_id: String, params: GetArchiveStateParams) -> Self {
+        Self {
+            endpoint: format!(
+                "{}{}{}{}",
+                ARCHIVE_BASE_URL, ARCHIVE_JOBS_ENDPOINT, job_id, GET_ARCHIVE_STATE_ENDPOINT
+            ),
+            params,
+        }
+    }
+
+    pub fn as_url(&self) -> String {
+        format!("{}?{}", self.endpoint, self.params.as_url())
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetArchiveStateParams {
+    alt: String,
+}
+
+impl GetArchiveStateParams {
+    pub fn default() -> Self {
+        Self {
+            alt: String::from("json"),
+        }
+    }
+
+    pub fn as_url(&self) -> String {
+        serde_json::to_value(&self)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .iter()
+            .fold(String::new(), |params, (param, value)| match value {
+                Value::String(value) => {
+                    if !params.is_empty() {
+                        return format!("{}&{}={}", params, param, value);
+                    }
+                    format!("{}={}", param, value)
+                }
+                _ => params,
+            })
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct GetArchiveStateResponsePayload {
+    state: String,
+    urls: Vec<String>,
+}
+
+impl GetArchiveStateResponsePayload {
+    pub fn state(&self) -> String {
+        self.state.clone()
+    }
+
+    pub fn urls(&self) -> Vec<String> {
+        self.urls.clone()
     }
 }
