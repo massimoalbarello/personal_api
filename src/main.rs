@@ -1,5 +1,5 @@
 use authorization::{auth_config, types::Authorizations};
-use utils::convert_auth_code_to_access_token;
+use oauth_client::OAuthClient;
 
 use actix_web::{web::Data, App, HttpServer};
 use dotenv::dotenv;
@@ -9,7 +9,7 @@ use tokio::{
 };
 
 mod authorization;
-mod utils;
+mod oauth_client;
 
 const REDIRECT_URI: &str = "http://localhost:3000/callback";
 
@@ -24,6 +24,8 @@ async fn main() {
     let (auth_code_tx, mut auth_code_rx): (UnboundedSender<String>, UnboundedReceiver<String>) =
         tokio::sync::mpsc::unbounded_channel();
     let auth_code_tx = Data::new(auth_code_tx);
+
+    let oauth_client = OAuthClient::new(Data::clone(&authorizations));
 
     let authorizations_cl = Data::clone(&authorizations);
     tokio::spawn(async move {
@@ -42,20 +44,14 @@ async fn main() {
     });
 
     loop {
-        let authorizations_cl = Data::clone(&authorizations);
         select! {
             Some(id) = auth_code_rx.recv() => {
+
                 // convert authorization code to access token
-                if let Ok(access_token) = convert_auth_code_to_access_token(id.clone(), authorizations_cl).await {
-                    authorizations
-                        .write()
-                        .unwrap()
-                        .get_mut(&id)
-                        .unwrap()
-                        .set_access_token(access_token);
+                if let Ok(()) = oauth_client.convert_auth_code_to_access_token(id.clone()).await {
+                    oauth_client.initiate_data_transfer(id.clone()).await;
                 }
 
-                println!("Authrization for client ID {}: {:?}", id, authorizations.read().unwrap().get(&id));
             }
         }
     }
