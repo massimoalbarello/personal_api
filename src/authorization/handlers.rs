@@ -43,7 +43,7 @@ pub async fn get_google_oauth_url(id: String, auth: Data<Authorizations>) -> imp
 pub async fn post_google_authorization_code(
     payload: Json<AuthorizationCodeRequestPayload>,
     auth: Data<Authorizations>,
-    auth_code_tx: Data<UnboundedSender<String>>,
+    authorization_tx: Data<UnboundedSender<String>>,
 ) -> impl Responder {
     let id = payload.id();
     if let Some(auth_state) = auth.write().unwrap().get_mut(&id) {
@@ -65,7 +65,7 @@ pub async fn post_google_authorization_code(
         );
         auth_state.set_code(auth_code);
 
-        auth_code_tx.send(id).unwrap();
+        authorization_tx.send(id).unwrap();
 
         return HttpResponse::Ok();
     }

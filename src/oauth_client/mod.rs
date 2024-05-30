@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::RwLock};
 
 use actix_web::web::Data;
+use futures::future::join_all;
 use reqwest::Client;
 use types::{
     AccessTokenParams, AccessTokenResponsePayload, AccessTokenUrl, InitiateTransferParams,
@@ -23,7 +24,10 @@ impl OAuthClient {
             authorizations,
         }
     }
-    pub async fn convert_auth_code_to_access_token(&self, client_id: String) -> Result<(), String> {
+    pub async fn convert_authorization_to_access_token(
+        &self,
+        client_id: String,
+    ) -> Result<(), String> {
         let auth_code = self
             .authorizations
             .read()
@@ -82,35 +86,49 @@ impl OAuthClient {
     }
 
     pub async fn get_data_transfer_urls(&self, client_id: String) {
-        for resource in RESOURCES.iter() {
-            println!("Initiating data transfer for resource: {}", resource);
+        let initiated_data_transfers = RESOURCES
+            .iter()
+            .map(|&resource| self.initiate_data_transfer(client_id.clone(), resource.to_string()));
 
-            let params = InitiateTransferParams::default().with_resources(resource.to_string());
-            let initiate_transfer_url = InitiateTransferUrl::new(params).as_url();
+        let job_ids = join_all(initiated_data_transfers).await;
 
-            let access_token = self
-                .authorizations
-                .read()
-                .unwrap()
-                .get(&client_id)
-                .unwrap()
-                .access_token()
-                .unwrap();
+        println!("Job IDs: {:?}", job_ids);
+    }
 
-            let response = self
-                .client
-                .post(initiate_transfer_url)
-                .bearer_auth(access_token)
-                .header("Content-Length", 0) // otherwise the server returns 411
-                .send()
-                .await
-                .unwrap();
+    async fn initiate_data_transfer(
+        &self,
+        client_id: String,
+        resource: String,
+    ) -> Result<(String, String), String> {
+        println!("Initiating data transfer for resource: {}", resource);
 
-            let response: InitiateTransferResponsePayload = response.json().await.unwrap();
+        let params = InitiateTransferParams::default().with_resources(resource.to_string());
+        let initiate_transfer_url = InitiateTransferUrl::new(params).as_url();
 
-            let job_id = response.archive_job_id();
+        let access_token = self
+            .authorizations
+            .read()
+            .unwrap()
+            .get(&client_id)
+            .unwrap()
+            .access_token()
+            .unwrap();
 
-            println!("Initiated data transfer with job ID: {}", job_id);
-        }
+        let response = self
+            .client
+            .post(initiate_transfer_url)
+            .bearer_auth(access_token)
+            .header("Content-Length", 0) // otherwise the server returns 411
+            .send()
+            .await
+            .unwrap();
+
+        let response: InitiateTransferResponsePayload = response.json().await.unwrap();
+
+        let job_id = response.archive_job_id();
+
+        println!("Initiated data transfer with job ID: {}", job_id);
+
+        Ok((resource, job_id))
     }
 }

@@ -22,9 +22,11 @@ async fn main() {
     // to achieve globally shared state, it must be created outside of the closure passed to HttpServer::new and moved/cloned in
     let authorizations = Data::new(Authorizations::default());
 
-    let (auth_code_tx, mut auth_code_rx): (UnboundedSender<String>, UnboundedReceiver<String>) =
-        tokio::sync::mpsc::unbounded_channel();
-    let auth_code_tx = Data::new(auth_code_tx);
+    let (authorization_tx, mut authorization_rx): (
+        UnboundedSender<String>,
+        UnboundedReceiver<String>,
+    ) = tokio::sync::mpsc::unbounded_channel();
+    let authorization_tx = Data::new(authorization_tx);
 
     let oauth_client = OAuthClient::new(Data::clone(&authorizations));
 
@@ -34,7 +36,7 @@ async fn main() {
         HttpServer::new(move || {
             App::new()
                 .app_data(Data::clone(&authorizations_cl))
-                .app_data(Data::clone(&auth_code_tx))
+                .app_data(Data::clone(&authorization_tx))
                 .configure(auth_config)
         })
         .bind(("127.0.0.1", 8080))
@@ -46,10 +48,10 @@ async fn main() {
 
     loop {
         select! {
-            Some(id) = auth_code_rx.recv() => {
+            Some(id) = authorization_rx.recv() => {
 
                 // convert authorization code to access token
-                if let Ok(()) = oauth_client.convert_auth_code_to_access_token(id.clone()).await {
+                if let Ok(()) = oauth_client.convert_authorization_to_access_token(id.clone()).await {
                     oauth_client.get_data_transfer_urls(id).await;
                 }
 
