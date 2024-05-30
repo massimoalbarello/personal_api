@@ -9,10 +9,9 @@ use crate::{
         AuthorizationCodeRequestPayload, AuthorizationParams, AuthorizationState, AuthorizationUrl,
         Authorizations,
     },
-    REDIRECT_URI,
+    REDIRECT_URI, RESOURCES,
 };
 
-const RESOURCES: [&str; 3] = ["myactivity.search", "myactivity.maps", "myactivity.youtube"];
 const DATA_PORTABILITY_BASE_URL: &str = "https://www.googleapis.com/auth/dataportability.";
 
 pub async fn get_google_oauth_url(id: String, auth: Data<Authorizations>) -> impl Responder {

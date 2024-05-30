@@ -3,8 +3,9 @@ use std::env;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-const ACCESS_TOKEN_BASE_URL: &str = "https://oauth2.googleapis.com/token";
-
+const ACCESS_TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
+const TRANSFER_BASE_URL: &str = "https://dataportability.googleapis.com/v1beta/";
+const INITIATE_TRANSFER_ENDPOINT: &str = "portabilityArchive:initiate";
 pub struct AccessTokenUrl {
     endpoint: String,
     params: AccessTokenParams,
@@ -13,7 +14,7 @@ pub struct AccessTokenUrl {
 impl AccessTokenUrl {
     pub fn new(params: AccessTokenParams) -> Self {
         Self {
-            endpoint: String::from(ACCESS_TOKEN_BASE_URL),
+            endpoint: String::from(ACCESS_TOKEN_ENDPOINT),
             params,
         }
     }
@@ -90,5 +91,72 @@ pub struct AccessTokenResponsePayload {
 impl AccessTokenResponsePayload {
     pub fn access_token(&self) -> String {
         self.access_token.clone()
+    }
+}
+
+pub struct InitiateTransferUrl {
+    endpoint: String,
+    params: InitiateTransferParams,
+}
+
+impl InitiateTransferUrl {
+    pub fn new(params: InitiateTransferParams) -> Self {
+        Self {
+            endpoint: String::from(TRANSFER_BASE_URL) + INITIATE_TRANSFER_ENDPOINT,
+            params,
+        }
+    }
+
+    pub fn as_url(&self) -> String {
+        format!("{}?{}", self.endpoint, self.params.as_url())
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct InitiateTransferParams {
+    resources: Option<String>,
+    alt: String,
+}
+
+impl InitiateTransferParams {
+    pub fn default() -> Self {
+        Self {
+            resources: None,
+            alt: String::from("json"),
+        }
+    }
+
+    pub fn with_resources(mut self, resources: String) -> Self {
+        self.resources = Some(resources);
+        self
+    }
+
+    pub fn as_url(&self) -> String {
+        serde_json::to_value(&self)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .iter()
+            .fold(String::new(), |params, (param, value)| match value {
+                Value::String(value) => {
+                    if !params.is_empty() {
+                        return format!("{}&{}={}", params, param, value);
+                    }
+                    format!("{}={}", param, value)
+                }
+                _ => params,
+            })
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct InitiateTransferResponsePayload {
+    #[serde(rename = "archiveJobId")]
+    archive_job_id: String,
+}
+
+impl InitiateTransferResponsePayload {
+    pub fn archive_job_id(&self) -> String {
+        self.archive_job_id.clone()
     }
 }

@@ -35,6 +35,10 @@ impl AuthorizationState {
         self.code.clone()
     }
 
+    pub fn access_token(&self) -> Option<String> {
+        self.access_token.clone()
+    }
+
     pub fn set_code(&mut self, code: String) {
         self.code = Some(code);
     }

@@ -12,6 +12,7 @@ mod authorization;
 mod oauth_client;
 
 const REDIRECT_URI: &str = "http://localhost:3000/callback";
+const RESOURCES: [&str; 3] = ["myactivity.search", "myactivity.maps", "myactivity.youtube"];
 
 #[actix_web::main]
 async fn main() {
@@ -49,7 +50,7 @@ async fn main() {
 
                 // convert authorization code to access token
                 if let Ok(()) = oauth_client.convert_auth_code_to_access_token(id.clone()).await {
-                    oauth_client.initiate_data_transfer(id.clone()).await;
+                    oauth_client.get_data_transfer_urls(id).await;
                 }
 
             }
