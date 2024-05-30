@@ -96,14 +96,14 @@ impl OAuthClient {
 
         println!("Job IDs: {:?}", job_ids);
 
-        let get_archive_states = job_ids.iter().filter_map(|job_id| {
+        let poll_archive_states = job_ids.iter().filter_map(|job_id| {
             if let Ok((_resource, job_id)) = job_id {
-                return Some(self.get_archive_state(client_id.clone(), job_id.clone()));
+                return Some(self.poll_archive_state(client_id.clone(), job_id.clone()));
             }
             None
         });
 
-        let download_urls = join_all(get_archive_states).await;
+        let download_urls = join_all(poll_archive_states).await;
 
         println!("Download URLs: {:?}", download_urls);
     }
@@ -145,9 +145,13 @@ impl OAuthClient {
         Ok((resource, job_id))
     }
 
-    async fn get_archive_state(&self, client_id: String, job_id: String) -> Result<String, String> {
+    async fn poll_archive_state(
+        &self,
+        client_id: String,
+        job_id: String,
+    ) -> Result<String, String> {
         let params = GetArchiveStateParams::default();
-        let get_archive_state_url = GetArchiveStateUrl::new(job_id.clone(), params).as_url();
+        let poll_archive_state_url = GetArchiveStateUrl::new(job_id.clone(), params).as_url();
 
         let mut interval = interval(Duration::from_secs(10));
 
@@ -166,26 +170,32 @@ impl OAuthClient {
 
             let response = self
                 .client
-                .get(get_archive_state_url.clone())
+                .get(poll_archive_state_url.clone())
                 .bearer_auth(access_token)
                 .header("Content-Length", 0) // otherwise the server returns 411
                 .send()
                 .await
                 .unwrap();
 
-            println!("Response: {:?}", response);
-
             match response.json::<GetArchiveStateResponsePayload>().await {
-                Ok(response) => {
-                    println!("Job state: {:?}", response.state());
+                Ok(GetArchiveStateResponsePayload::Completed(response)) => {
                     let download_url = response.urls()[0].clone();
-                    println!("Download URL for job ID {}: {:?}", job_id, download_url);
+                    println!(
+                        "Job with ID {} completed. Download URL: {:?}",
+                        job_id, download_url
+                    );
                     return Ok(download_url);
                 }
-                Err(_) => {
+                Ok(GetArchiveStateResponsePayload::InProgress(_)) => {
+                    println!("Job with ID {} still in progress", job_id);
+                }
+                Err(e) => {
                     // TODO: distinguish the case in which the server returns an error
-                    //       from the ones in which the job has not yet finished or has failed
+                    //       from the ones in which the job has failed
                     //       for now we just assume that each job eventually completes
+                    let error = format!("Job with ID {} failed: {:?}", job_id, e);
+                    println!("{}", error);
+                    return Err(error);
                 }
             }
         }

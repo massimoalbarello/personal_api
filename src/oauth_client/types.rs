@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::env;
 
@@ -6,7 +6,7 @@ const ACCESS_TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
 const ARCHIVE_BASE_URL: &str = "https://dataportability.googleapis.com/v1beta/";
 const INITIATE_ARCHIVE_ENDPOINT: &str = "portabilityArchive:initiate";
 const ARCHIVE_JOBS_ENDPOINT: &str = "archiveJobs/";
-const GET_ARCHIVE_STATE_ENDPOINT: &str = "/portabilityArchiveState";
+const POLL_ARCHIVE_STATE_ENDPOINT: &str = "/portabilityArchiveState";
 
 pub struct AccessTokenUrl {
     endpoint: String,
@@ -173,7 +173,7 @@ impl GetArchiveStateUrl {
         Self {
             endpoint: format!(
                 "{}{}{}{}",
-                ARCHIVE_BASE_URL, ARCHIVE_JOBS_ENDPOINT, job_id, GET_ARCHIVE_STATE_ENDPOINT
+                ARCHIVE_BASE_URL, ARCHIVE_JOBS_ENDPOINT, job_id, POLL_ARCHIVE_STATE_ENDPOINT
             ),
             params,
         }
@@ -213,19 +213,55 @@ impl GetArchiveStateParams {
             })
     }
 }
+#[derive(Debug)]
+pub enum GetArchiveStateResponsePayload {
+    Completed(ArchiveCompleteResponsePayload),
+    InProgress(ArchiveInProgressResponsePayload),
+    // Failed(ArchiveFailedResponsePayload),    // TODO: figure out how the response looks like in case "state" is "FAILED"
+}
+
+impl<'de> Deserialize<'de> for GetArchiveStateResponsePayload {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+
+        if let Ok(response) = ArchiveCompleteResponsePayload::deserialize(&value) {
+            return Ok(GetArchiveStateResponsePayload::Completed(response));
+        }
+        if let Ok(response) = ArchiveInProgressResponsePayload::deserialize(&value) {
+            return Ok(GetArchiveStateResponsePayload::InProgress(response));
+        }
+        Err(serde::de::Error::custom(
+            "Failed to deserialize to existing variants",
+        ))
+    }
+}
 
 #[derive(Deserialize, Debug)]
-pub struct GetArchiveStateResponsePayload {
+pub struct ArchiveCompleteResponsePayload {
     state: String,
     urls: Vec<String>,
 }
 
-impl GetArchiveStateResponsePayload {
+impl ArchiveCompleteResponsePayload {
     pub fn state(&self) -> String {
         self.state.clone()
     }
 
     pub fn urls(&self) -> Vec<String> {
         self.urls.clone()
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ArchiveInProgressResponsePayload {
+    state: String,
+}
+
+impl ArchiveInProgressResponsePayload {
+    pub fn state(&self) -> String {
+        self.state.clone()
     }
 }
