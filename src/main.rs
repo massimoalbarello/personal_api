@@ -1,8 +1,9 @@
+use actix_cors::Cors;
 use authorization::{auth_config, types::Authorizations};
 use oauth_client::OAuthClient;
 use papi_line_client::PapiLineClient;
 
-use actix_web::{web::Data, App, HttpServer};
+use actix_web::{http, web::Data, App, HttpServer};
 use dotenv::dotenv;
 use tokio::{
     select,
@@ -43,6 +44,12 @@ async fn main() {
         // Start a number of HTTP workers equal to the number of physical CPUs in the system
         HttpServer::new(move || {
             App::new()
+                .wrap(
+                    Cors::default()
+                        .allowed_origin("http://localhost:3000")
+                        .allowed_methods(vec!["GET", "POST"])
+                        .allow_any_header(),
+                )
                 .app_data(Data::clone(&authorizations_cl))
                 .app_data(Data::clone(&authorization_tx))
                 .configure(auth_config)

@@ -1,6 +1,6 @@
 use actix_web::{
     web::{Data, Json},
-    HttpResponse, Responder,
+    HttpRequest, HttpResponse, Responder,
 };
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -14,7 +14,15 @@ use crate::{
 
 const DATA_PORTABILITY_BASE_URL: &str = "https://www.googleapis.com/auth/dataportability.";
 
-pub async fn get_google_oauth_url(id: String, auth: Data<Authorizations>) -> impl Responder {
+pub async fn get_google_oauth_url(req: HttpRequest, auth: Data<Authorizations>) -> impl Responder {
+    let client_id = req
+        .headers()
+        .get("X-Client-Id")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
     let auth_state = AuthorizationState::new();
 
     let params = AuthorizationParams::default()
@@ -29,15 +37,14 @@ pub async fn get_google_oauth_url(id: String, auth: Data<Authorizations>) -> imp
 
     println!(
         "Client with ID: {} requested authorization URL: {}",
-        id, auth_url
+        client_id, auth_url
     );
 
-    auth.write().unwrap().insert(id, auth_state);
+    auth.write().unwrap().insert(client_id, auth_state);
 
-    HttpResponse::Ok().body(format!(
-        "Client can start authorization flow at: {}",
-        auth_url
-    ))
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .json(serde_json::json!({"url": auth_url}))
 }
 
 pub async fn post_google_authorization_code(

@@ -19,3 +19,6 @@ Cargo.lock
 
 .env
 /Portability
+
+/papi_frontend/.next
+/papi_frontend/node_modules
