@@ -30,8 +30,12 @@ async fn main() {
     ) = tokio::sync::mpsc::unbounded_channel();
     let authorization_tx = Data::new(authorization_tx);
 
-    let oauth_client = OAuthClient::new(Data::clone(&authorizations));
+    let (download_info_tx, mut download_info_rx): (
+        UnboundedSender<((String, String), Result<String, String>)>,
+        UnboundedReceiver<((String, String), Result<String, String>)>,
+    ) = tokio::sync::mpsc::unbounded_channel();
 
+    let oauth_client = OAuthClient::new(Data::clone(&authorizations), download_info_tx);
     let papi_line_client = PapiLineClient::new();
 
     let authorizations_cl = Data::clone(&authorizations);
@@ -53,17 +57,20 @@ async fn main() {
     loop {
         select! {
             Some(id) = authorization_rx.recv() => {
-
                 // convert authorization code to access token
                 if let Ok(()) = oauth_client.convert_authorization_to_access_token(id.clone()).await {
-                    if let Ok(download_urls) = oauth_client.get_data_archive_urls(id.clone()).await {
-                        papi_line_client.post_download_urls(download_urls).await;
-                        // sleep for 60 seconds to ensure that the python script has time to download the data
-                        tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-                        let _ = oauth_client.reset_authorization(id).await;
-                    }
+                    println!("Successfully converted authorization code to access token for client ID: {}", id);
+                    oauth_client.initiate_data_archives(id.clone());
                 }
-
+            },
+            Some(((id, resource), resource_res)) = download_info_rx.recv() => {
+                if let Ok(download_url) = &resource_res {
+                    papi_line_client.post_download_urls(&resource, download_url).await;
+                }
+                authorizations.write().unwrap().get_mut(&id).unwrap().push_resource(resource, resource_res);
+                if authorizations.read().unwrap().get(&id).unwrap().all_resources_processed() {
+                    let _ = oauth_client.reset_authorization(id).await;
+                }
             }
         }
     }

@@ -3,6 +3,7 @@ import urllib
 import os
 import io
 import zipfile
+from threading import Thread
 
 NON_ZIP_FILE_DIRECTORY = 'files'
 os.makedirs(NON_ZIP_FILE_DIRECTORY, exist_ok=True)
@@ -12,7 +13,7 @@ ZIP_MIME_TYPES = ['application/zip', 'application/x-zip', 'application/x-zip-com
 
 app = Flask(__name__)
 
-def download_file(url) -> None:
+def download_file_background(resource, url) -> None:
     try:
         print(f'👉 Beginning download. {url}')
         url_file = urllib.request.urlopen(url)
@@ -52,14 +53,15 @@ def download_files():
     print("Received POST request to /download")
     # print("Request JSON payload:", request.json)
 
-    if not request.json:
+    body = request.get_json()
+    resource = body.get('resource')
+    url = body.get('url')
+
+    if not resource or not url:
         return jsonify({'error': 'Invalid request format'}), 400
 
-    urls = request.json
-    for url in urls:
-        if not url["Ok"]:
-            continue
-        download_file(url["Ok"])
+    thread = Thread(target=download_file_background, args=(resource, url))
+    thread.start()
 
     return {}, 200
 

@@ -1,9 +1,11 @@
 use std::{collections::HashMap, sync::RwLock};
 
 use actix_web::{web::Data, Result};
-use futures::future::join_all;
 use reqwest::Client;
-use tokio::time::{interval, Duration};
+use tokio::{
+    sync::mpsc::UnboundedSender,
+    time::{interval, Duration},
+};
 use types::{
     AccessTokenParams, AccessTokenResponsePayload, AccessTokenUrl, GetArchiveStateParams,
     GetArchiveStateResponsePayload, GetArchiveStateUrl, InitiateArchiveParams,
@@ -18,13 +20,18 @@ mod types;
 pub struct OAuthClient {
     client: Client,
     authorizations: Data<RwLock<HashMap<String, AuthorizationState>>>,
+    download_info_tx: UnboundedSender<((String, String), Result<String, String>)>,
 }
 
 impl OAuthClient {
-    pub fn new(authorizations: Data<RwLock<HashMap<String, AuthorizationState>>>) -> Self {
+    pub fn new(
+        authorizations: Data<RwLock<HashMap<String, AuthorizationState>>>,
+        download_info_tx: UnboundedSender<((String, String), Result<String, String>)>,
+    ) -> Self {
         Self {
             client: Client::new(),
             authorizations,
+            download_info_tx,
         }
     }
     pub async fn convert_authorization_to_access_token(
@@ -88,40 +95,7 @@ impl OAuthClient {
         Ok(())
     }
 
-    pub async fn get_data_archive_urls(
-        &self,
-        client_id: String,
-    ) -> Result<Vec<Result<String, String>>, String> {
-        let initiated_data_archives = RESOURCES
-            .iter()
-            .map(|&resource| self.initiate_data_archive(client_id.clone(), resource.to_string()));
-
-        let job_ids = join_all(initiated_data_archives).await;
-
-        println!("Job IDs: {:?}", job_ids);
-
-        let poll_archive_states = job_ids.iter().filter_map(|job_id| {
-            if let Ok((_resource, job_id)) = job_id {
-                return Some(self.poll_archive_state(client_id.clone(), job_id.clone()));
-            }
-            None
-        });
-
-        let download_urls = join_all(poll_archive_states).await;
-
-        Ok(download_urls)
-    }
-
-    async fn initiate_data_archive(
-        &self,
-        client_id: String,
-        resource: String,
-    ) -> Result<(String, String), String> {
-        println!("Initiating data transfer for resource: {}", resource);
-
-        let params = InitiateArchiveParams::default().with_resources(resource.to_string());
-        let initiate_archive_url = InitiateArchiveUrl::new(params).as_url();
-
+    pub fn initiate_data_archives(&self, client_id: String) {
         let access_token = self
             .authorizations
             .read()
@@ -131,76 +105,36 @@ impl OAuthClient {
             .access_token()
             .unwrap();
 
-        let response = self
-            .client
-            .post(initiate_archive_url)
-            .bearer_auth(access_token)
-            .header("Content-Length", 0) // otherwise the server returns 411
-            .send()
-            .await
-            .unwrap();
-
-        let response: InitiateArchiveResponsePayload = response.json().await.unwrap();
-
-        let job_id = response.archive_job_id();
-
-        println!("Initiated data transfer with job ID: {}", job_id);
-
-        Ok((resource, job_id))
-    }
-
-    async fn poll_archive_state(
-        &self,
-        client_id: String,
-        job_id: String,
-    ) -> Result<String, String> {
-        let params = GetArchiveStateParams::default();
-        let poll_archive_state_url = GetArchiveStateUrl::new(job_id.clone(), params).as_url();
-        let access_token = self
-            .authorizations
-            .read()
-            .unwrap()
-            .get(&client_id)
-            .unwrap()
-            .access_token()
-            .unwrap();
-
-        let mut interval = interval(Duration::from_secs(10));
-
-        loop {
-            println!("Checking state for job ID: {}", job_id);
-            interval.tick().await;
-
-            let response = self
-                .client
-                .get(poll_archive_state_url.clone())
-                .bearer_auth(access_token.clone())
-                .header("Content-Length", 0) // otherwise the server returns 411
-                .send()
+        for resource in RESOURCES {
+            let oauth_client = Client::clone(&self.client);
+            let access_token = access_token.clone();
+            let download_info_tx = self.download_info_tx.clone();
+            let client_id = client_id.clone();
+            tokio::spawn(async move {
+                match initiate_data_archive(
+                    oauth_client.clone(),
+                    resource.to_string(),
+                    access_token.clone(),
+                )
                 .await
-                .unwrap();
-
-            match response.json::<GetArchiveStateResponsePayload>().await {
-                Ok(GetArchiveStateResponsePayload::Completed(response)) => {
-                    let download_url = response.urls()[0].clone();
-                    println!(
-                        "Job with ID {} completed. Download URL: {:?}",
-                        job_id, download_url
-                    );
-                    return Ok(download_url);
+                {
+                    Ok((resource, job_id)) => {
+                        match poll_archive_state(oauth_client.clone(), job_id.clone(), access_token)
+                            .await
+                        {
+                            Ok(download_url) => download_info_tx
+                                .send(((client_id, resource), Ok(download_url)))
+                                .unwrap(),
+                            Err(e) => download_info_tx
+                                .send(((client_id, resource), Err(e)))
+                                .unwrap(),
+                        }
+                    }
+                    Err(e) => download_info_tx
+                        .send(((client_id, resource.to_string()), Err(e)))
+                        .unwrap(),
                 }
-                Ok(GetArchiveStateResponsePayload::InProgress(_)) => {
-                    println!("Job with ID {} still in progress", job_id);
-                }
-                Err(e) => {
-                    // TODO: distinguish the case in which the server returns an error
-                    //       from the ones in which the job has failed
-                    //       for now we just assume that each job eventually completes
-                    let error = format!("Job with ID {} failed: {:?}", job_id, e);
-                    println!("{}", error);
-                    return Err(error);
-                }
-            }
+            });
         }
     }
 
@@ -231,5 +165,77 @@ impl OAuthClient {
         println!("Reset authorization for client ID: {}", client_id);
 
         Ok(())
+    }
+}
+
+async fn initiate_data_archive(
+    oauth_client: Client,
+    resource: String,
+    access_token: String,
+) -> Result<(String, String), String> {
+    println!("Initiating data transfer for resource: {}", resource);
+
+    let params = InitiateArchiveParams::default().with_resources(resource.to_string());
+    let initiate_archive_url = InitiateArchiveUrl::new(params).as_url();
+
+    let response = oauth_client
+        .post(initiate_archive_url)
+        .bearer_auth(access_token)
+        .header("Content-Length", 0) // otherwise the server returns 411
+        .send()
+        .await
+        .unwrap();
+
+    let response: InitiateArchiveResponsePayload = response.json().await.unwrap();
+
+    let job_id = response.archive_job_id();
+
+    println!("Initiated data transfer with job ID: {}", job_id);
+
+    Ok((resource, job_id))
+}
+
+async fn poll_archive_state(
+    oauth_client: Client,
+    job_id: String,
+    access_token: String,
+) -> Result<String, String> {
+    let params = GetArchiveStateParams::default();
+    let poll_archive_state_url = GetArchiveStateUrl::new(job_id.clone(), params).as_url();
+
+    let mut interval = interval(Duration::from_secs(10));
+    loop {
+        println!("Checking state for job ID: {}", job_id);
+        interval.tick().await;
+
+        let response = oauth_client
+            .get(poll_archive_state_url.clone())
+            .bearer_auth(access_token.clone())
+            .header("Content-Length", 0) // otherwise the server returns 411
+            .send()
+            .await
+            .unwrap();
+
+        match response.json::<GetArchiveStateResponsePayload>().await {
+            Ok(GetArchiveStateResponsePayload::Completed(response)) => {
+                let download_url = response.urls()[0].clone();
+                println!(
+                    "Job with ID {} completed. Download URL: {:?}",
+                    job_id, download_url
+                );
+                return Ok(download_url);
+            }
+            Ok(GetArchiveStateResponsePayload::InProgress(_)) => {
+                println!("Job with ID {} still in progress", job_id);
+            }
+            Err(e) => {
+                // TODO: distinguish the case in which the server returns an error
+                //       from the ones in which the job has failed
+                //       for now we just assume that each job eventually completes
+                let error = format!("Job with ID {} failed: {:?}", job_id, e);
+                println!("{}", error);
+                return Err(error);
+            }
+        }
     }
 }

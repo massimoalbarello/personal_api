@@ -13,11 +13,16 @@ impl PapiLineClient {
         }
     }
 
-    pub async fn post_download_urls(&self, download_urls: Vec<Result<String, String>>) {
+    pub async fn post_download_urls(&self, resource: &str, download_url: &str) {
+        let body = serde_json::json!({
+            "resource": resource,
+            "url": download_url
+        });
+
         let _response = self
             .client
             .post(PAPI_LINE_SERVER_ENDPOINT)
-            .json(&download_urls)
+            .json(&body)
             .send()
             .await;
     }

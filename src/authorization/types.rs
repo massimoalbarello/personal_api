@@ -1,8 +1,8 @@
-use std::{collections::HashMap, sync::RwLock};
-
+use crate::RESOURCES;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::env;
+use std::{collections::HashMap, sync::RwLock};
 use uuid::Uuid;
 
 pub type Authorizations = RwLock<HashMap<String, AuthorizationState>>;
@@ -15,6 +15,7 @@ pub struct AuthorizationState {
     state: String,
     code: Option<String>,
     access_token: Option<String>,
+    resource_res: Vec<(String, Result<String, String>)>,
 }
 
 impl AuthorizationState {
@@ -24,6 +25,7 @@ impl AuthorizationState {
             state,
             code: None,
             access_token: None,
+            resource_res: Vec::new(),
         }
     }
 
@@ -45,6 +47,14 @@ impl AuthorizationState {
 
     pub fn set_access_token(&mut self, access_token: String) {
         self.access_token = Some(access_token);
+    }
+
+    pub fn push_resource(&mut self, resource: String, res: Result<String, String>) {
+        self.resource_res.push((resource, res));
+    }
+
+    pub fn all_resources_processed(&self) -> bool {
+        self.resource_res.len() == RESOURCES.len()
     }
 }
 
