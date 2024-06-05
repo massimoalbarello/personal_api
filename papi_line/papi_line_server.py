@@ -10,7 +10,7 @@ def download_file_background(id, resource, url) -> None:
         print(f'👉 Beginning download. {url}')
         url_file = urllib.request.urlopen(url)
         print('👍 Download complete!')
-        extract_file(url_file)
+        extract_file(id, resource, url_file)
     except Exception as e:
         print("Error: ", e)
 
