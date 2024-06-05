@@ -6,7 +6,7 @@ papi_backend/*.pdb
 papi_backend/.env
 
 # Python Pipeline
-papi_line/users_data
+papi_line/users_datalake
 
 # Next Frontend
 papi_frontend/.next

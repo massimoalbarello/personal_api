@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, mock_open, patch, ANY
 import zipfile
 import json
 from io import BytesIO
-from pipeline.extract import flatten
+from pipeline.extract import flatten, USERS_DATALAKE 
 
 class TestFlattenFunction(unittest.TestCase):
     @patch('builtins.open', new_callable=mock_open)
@@ -32,7 +32,7 @@ class TestFlattenFunction(unittest.TestCase):
             mock_file.assert_called_once_with(ANY, 'w', encoding='utf-8')
             # Verify the filename part that does not change
             filename_arg = mock_file.call_args[0][0]
-            self.assertTrue(filename_arg.startswith('users_data/test_user_'))
+            self.assertTrue(filename_arg.startswith(USERS_DATALAKE + '/test_user_'))
             self.assertTrue(filename_arg.endswith('_video_search.json'))
             mock_json_dump.assert_called_once_with(mock_json_content, mock_file(), ensure_ascii=False, indent=4)
             mock_zip.open.assert_called_once_with(mock_file_info)

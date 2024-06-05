@@ -1,16 +1,19 @@
 from flask import Flask, request, jsonify
 import urllib
 from threading import Thread
-from pipeline.extract import extract_file
+from pipeline.extract import extract
+from pipeline.transform import transform
 
 app = Flask(__name__)
 
-def download_file_background(id, url) -> None:
+def start_etl_pipeline(id, url) -> None:
     try:
         print(f'👉 Beginning download. {url}')
         url_file = urllib.request.urlopen(url)
         print('👍 Download complete!')
-        extract_file(id, url_file)
+        filenames = extract(id, url_file)
+        transform(filenames)
+
     except Exception as e:
         print("Error: ", e)
 
@@ -27,7 +30,7 @@ def download_files():
     if not id or not resource or not url:
         return jsonify({'error': 'Invalid request format'}), 400
 
-    thread = Thread(target=download_file_background, args=(id, url))
+    thread = Thread(target=start_etl_pipeline, args=(id, url))
     thread.start()
 
     return {}, 200
