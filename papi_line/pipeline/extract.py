@@ -10,13 +10,10 @@ os.makedirs(USERS_DATA_DIRECTORY, exist_ok=True)
 # A list of MIME types that are associated with ZIP files.
 ZIP_MIME_TYPES = ['application/zip', 'application/x-zip', 'application/x-zip-compressed']
 
-# TEST_ZIP_FOLDER_PATH = "./test_my_activity.zip"
-
 def generate_filename(user_id, timestamp, resource):
     return f"{user_id}_{timestamp}_{resource}.json"
 
 def flatten(zf, id):
-    # zf = zipfile.ZipFile(TEST_ZIP_FOLDER_PATH, 'r')   # for testing
     for file_info in zf.infolist():
         if file_info.filename.endswith('MyActivity.json'):
             resource = file_info.filename.split('/')[2].lower().replace(' ', '_')

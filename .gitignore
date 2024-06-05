@@ -7,7 +7,6 @@ papi_backend/.env
 
 # Python Pipeline
 papi_line/users_data
-papi_line/test_my_activity.zip
 
 # Next Frontend
 papi_frontend/.next

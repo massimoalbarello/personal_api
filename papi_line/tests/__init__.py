@@ -1,0 +1,1 @@
+# run tests by calling 'pytest' in the root folder
