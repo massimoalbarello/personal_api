@@ -3,7 +3,7 @@ use authorization::{auth_config, types::Authorizations};
 use oauth_client::OAuthClient;
 use papi_line_client::PapiLineClient;
 
-use actix_web::{http, web::Data, App, HttpServer};
+use actix_web::{web::Data, App, HttpServer};
 use dotenv::dotenv;
 use tokio::{
     select,
@@ -72,7 +72,7 @@ async fn main() {
             },
             Some(((id, resource), resource_res)) = download_info_rx.recv() => {
                 if let Ok(download_url) = &resource_res {
-                    papi_line_client.post_download_urls(&resource, download_url).await;
+                    papi_line_client.post_download_urls(&id, &resource, download_url).await;
                 }
                 authorizations.write().unwrap().get_mut(&id).unwrap().push_resource(resource, resource_res);
                 if authorizations.read().unwrap().get(&id).unwrap().all_resources_processed() {

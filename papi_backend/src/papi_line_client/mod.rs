@@ -13,8 +13,9 @@ impl PapiLineClient {
         }
     }
 
-    pub async fn post_download_urls(&self, resource: &str, download_url: &str) {
+    pub async fn post_download_urls(&self, id: &str, resource: &str, download_url: &str) {
         let body = serde_json::json!({
+            "id": id,
             "resource": resource,
             "url": download_url
         });
