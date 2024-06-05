@@ -5,12 +5,12 @@ from pipeline.extract import extract_file
 
 app = Flask(__name__)
 
-def download_file_background(id, resource, url) -> None:
+def download_file_background(id, url) -> None:
     try:
         print(f'👉 Beginning download. {url}')
         url_file = urllib.request.urlopen(url)
         print('👍 Download complete!')
-        extract_file(id, resource, url_file)
+        extract_file(id, url_file)
     except Exception as e:
         print("Error: ", e)
 
@@ -27,7 +27,7 @@ def download_files():
     if not id or not resource or not url:
         return jsonify({'error': 'Invalid request format'}), 400
 
-    thread = Thread(target=download_file_background, args=(id, resource, url))
+    thread = Thread(target=download_file_background, args=(id, url))
     thread.start()
 
     return {}, 200
