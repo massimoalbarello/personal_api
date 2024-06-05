@@ -76,6 +76,8 @@ async fn main() {
                 }
                 authorizations.write().unwrap().get_mut(&id).unwrap().push_resource(resource, resource_res);
                 if authorizations.read().unwrap().get(&id).unwrap().all_resources_processed() {
+                    // wait 30 seconds for dowloading the data before resetting the authorization
+                    tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
                     let _ = oauth_client.reset_authorization(id).await;
                 }
             }
