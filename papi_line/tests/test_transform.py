@@ -12,7 +12,7 @@ TEST_FILES = [
 
 class TestTransformFunction(unittest.TestCase):
     def test_transform(self):
-        transform(TEST_FILES)
+        transform("testuser", TEST_FILES)
 
         self.assertTrue(True)
 

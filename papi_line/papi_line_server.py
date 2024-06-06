@@ -12,7 +12,7 @@ def start_etl_pipeline(id, url) -> None:
         url_file = urllib.request.urlopen(url)
         print('👍 Download complete!')
         filenames = extract(id, url_file)
-        transform(filenames)
+        transform(id, filenames)
 
     except Exception as e:
         print("Error: ", e)

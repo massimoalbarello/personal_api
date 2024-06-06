@@ -2,7 +2,7 @@ import os
 import io
 import zipfile
 import json
-from datetime import datetime
+from utils import generate_filename
 
 USERS_DATALAKE = 'users_datalake'
 os.makedirs(USERS_DATALAKE, exist_ok=True)
@@ -10,18 +10,14 @@ os.makedirs(USERS_DATALAKE, exist_ok=True)
 # A list of MIME types that are associated with ZIP files.
 ZIP_MIME_TYPES = ['application/zip', 'application/x-zip', 'application/x-zip-compressed']
 
-def generate_filename(user_id, timestamp, resource):
-    return f"{user_id}_{timestamp}_{resource}.json"
-
 def flatten(zf, id):
     filenames = []
     for file_info in zf.infolist():
         if file_info.filename.endswith('MyActivity.json'):
             
             # Generate new filename
-            resource = file_info.filename.split('/')[2].lower().replace(' ', '_')
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            new_filename = generate_filename(id, timestamp, resource)
+            resource = file_info.filename.split('/')[2].lower().replace(' ', '')
+            new_filename = generate_filename(id, resource)
             new_file_path = os.path.join(USERS_DATALAKE, new_filename)
             
             # Read the content of MyActivity.json from the zip file
