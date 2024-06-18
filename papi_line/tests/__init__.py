@@ -1,1 +1,1 @@
-# run tests by calling 'pytest' in the root folder
+# run tests by calling 'pytest -s' in the root folder

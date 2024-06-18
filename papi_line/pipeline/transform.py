@@ -8,6 +8,10 @@ from utils import generate_filename
 MERGED = USERS_DATALAKE + '/merged'
 os.makedirs(MERGED, exist_ok=True)
 
+LOG = USERS_DATALAKE + '/log'
+os.makedirs(LOG, exist_ok=True)
+
+SUBJECT = 'Eeshita'
 
 MY_ACTIVITY_FIELDS = {
     'header': pl.String,              # The card title that will typically be either an app name, domain name, or product name.
@@ -51,8 +55,15 @@ def transform(user_id, filenames):
     df_concat = pl.concat(dataframes).sort(by='time', descending=True)
     print(df_concat)
 
+    log = '. '.join([SUBJECT + " " +  title for title in df_concat["title"]])
+
     # Save merged file
     resources = [filename.split('_')[3].split('.json')[0] for filename in filenames]
-    new_file_path = os.path.join(MERGED, generate_filename(user_id, '_'.join(resources) + '_merged'))
+    new_file_path = os.path.join(MERGED, generate_filename(user_id, '_'.join(resources) + '_merged', 'json'))
     with open(new_file_path, 'w', encoding='utf-8') as f:
         json.dump(df_concat.to_dicts(), f, ensure_ascii=False, indent=4)
+
+    # Save log file
+    new_file_path = os.path.join(LOG, generate_filename(user_id, '_'.join(resources) + '_log', 'txt'))
+    with open(new_file_path, 'w', encoding='utf-8') as f:
+        f.write(log)

@@ -7,6 +7,7 @@ papi_backend/.env
 
 # Python Pipeline
 papi_line/users_datalake
+papi_line/.env
 
 # Next Frontend
 papi_frontend/.next

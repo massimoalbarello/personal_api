@@ -17,7 +17,7 @@ def flatten(zf, id):
             
             # Generate new filename
             resource = file_info.filename.split('/')[2].lower().replace(' ', '')
-            new_filename = generate_filename(id, resource)
+            new_filename = generate_filename(id, resource, 'json')
             new_file_path = os.path.join(USERS_DATALAKE, new_filename)
             
             # Read the content of MyActivity.json from the zip file

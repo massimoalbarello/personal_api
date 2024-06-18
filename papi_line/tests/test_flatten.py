@@ -33,7 +33,7 @@ class TestFlattenFunction(unittest.TestCase):
             # Verify the filename part that does not change
             filename_arg = mock_file.call_args[0][0]
             self.assertTrue(filename_arg.startswith(USERS_DATALAKE + '/test_user_'))
-            self.assertTrue(filename_arg.endswith('_video_search.json'))
+            self.assertTrue(filename_arg.endswith('_videosearch.json'))
             mock_json_dump.assert_called_once_with(mock_json_content, mock_file(), ensure_ascii=False, indent=4)
             mock_zip.open.assert_called_once_with(mock_file_info)
 
