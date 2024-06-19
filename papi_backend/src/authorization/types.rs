@@ -144,16 +144,11 @@ impl AuthorizationParams {
 
 #[derive(Deserialize)]
 pub struct AuthorizationCodeRequestPayload {
-    id: String,
     state: String,
     code: String,
 }
 
 impl AuthorizationCodeRequestPayload {
-    pub fn id(&self) -> String {
-        self.id.clone()
-    }
-
     pub fn state(&self) -> String {
         self.state.clone()
     }

@@ -2,6 +2,7 @@ use actix_web::{
     web::{Data, Json},
     HttpRequest, HttpResponse, Responder,
 };
+use std::env;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
@@ -9,7 +10,7 @@ use crate::{
         AuthorizationCodeRequestPayload, AuthorizationParams, AuthorizationState, AuthorizationUrl,
         Authorizations,
     },
-    REDIRECT_URI, RESOURCES,
+    RESOURCES,
 };
 
 const DATA_PORTABILITY_BASE_URL: &str = "https://www.googleapis.com/auth/dataportability.";
@@ -32,7 +33,7 @@ pub async fn get_google_oauth_url(req: HttpRequest, auth: Data<Authorizations>) 
                 .map(|r| format!("{}{}", DATA_PORTABILITY_BASE_URL, r))
                 .join("+"),
         )
-        .with_redirect_uri(REDIRECT_URI.to_string());
+        .with_redirect_uri(env::var("REDIRECT_URI").expect("REDIRECT_URI must be set"));
     let auth_url = AuthorizationUrl::new(params).as_url();
 
     println!(
@@ -48,16 +49,24 @@ pub async fn get_google_oauth_url(req: HttpRequest, auth: Data<Authorizations>) 
 }
 
 pub async fn post_google_authorization_code(
+    req: HttpRequest,
     payload: Json<AuthorizationCodeRequestPayload>,
     auth: Data<Authorizations>,
     authorization_tx: Data<UnboundedSender<String>>,
 ) -> impl Responder {
-    let id = payload.id();
-    if let Some(auth_state) = auth.write().unwrap().get_mut(&id) {
+    let client_id = req
+        .headers()
+        .get("X-Client-Id")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    if let Some(auth_state) = auth.write().unwrap().get_mut(&client_id) {
         if auth_state.state() != payload.state() {
             println!(
                 "Client with ID: {} sent invalid state. Expected: {}, got: {}",
-                id,
+                client_id,
                 auth_state.state(),
                 payload.state()
             );
@@ -68,15 +77,15 @@ pub async fn post_google_authorization_code(
 
         println!(
             "Client with ID: {} posted authorization code: {}",
-            id, auth_code
+            client_id, auth_code
         );
         auth_state.set_code(auth_code);
 
-        authorization_tx.send(id).unwrap();
+        authorization_tx.send(client_id).unwrap();
 
         return HttpResponse::Ok();
     }
 
-    println!("Client with ID: {} not found", id);
+    println!("Client with ID: {} not found", client_id);
     HttpResponse::BadRequest()
 }

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::RwLock};
+use std::{collections::HashMap, env, sync::RwLock};
 
 use actix_web::{web::Data, Result};
 use reqwest::Client;
@@ -13,7 +13,7 @@ use types::{
     ResetAuthorizationResponsePayload, ResetAuthorizationUrl,
 };
 
-use crate::{authorization::types::AuthorizationState, REDIRECT_URI, RESOURCES};
+use crate::{authorization::types::AuthorizationState, RESOURCES};
 
 mod types;
 
@@ -60,7 +60,7 @@ impl OAuthClient {
 
         let params = AccessTokenParams::default()
             .with_code(auth_code)
-            .with_redirect_uri(REDIRECT_URI.to_string())
+            .with_redirect_uri(env::var("REDIRECT_URI").expect("REDIRECT_URI must be set"))
             .with_state(state);
         let access_token_url = AccessTokenUrl::new(params).as_url();
 

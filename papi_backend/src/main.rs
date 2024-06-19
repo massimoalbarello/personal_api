@@ -14,7 +14,6 @@ mod authorization;
 mod oauth_client;
 mod papi_line_client;
 
-const REDIRECT_URI: &str = "http://localhost:3000/callback";
 const RESOURCES: [&str; 3] = ["myactivity.search", "myactivity.maps", "myactivity.youtube"];
 
 #[actix_web::main]
