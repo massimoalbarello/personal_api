@@ -46,7 +46,7 @@ async fn main() {
             App::new()
                 .wrap(
                     Cors::default()
-                        .allowed_origin("http://localhost:3000")
+                        // .allowed_origin("http://localhost:3000")
                         .allowed_methods(vec!["GET", "POST"])
                         .allow_any_header(),
                 )
@@ -54,7 +54,7 @@ async fn main() {
                 .app_data(Data::clone(&authorization_tx))
                 .configure(auth_config)
         })
-        .bind(("127.0.0.1", 8080))
+        .bind(("0.0.0.0", 8080))
         .unwrap()
         .run()
         .await
