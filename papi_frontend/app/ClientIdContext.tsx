@@ -2,27 +2,34 @@
 
 import React, { createContext, useState, useEffect } from "react";
 
-const ClientIdContext = createContext("client_id");
+const ClientIdContext = createContext("clientId");
 
 // Generate a random client ID
-function generateClientId() {
+const generateClientId = () => {
   return Math.random().toString(36).substring(2, 15);
-}
+};
 
 // Create a provider component
-export function ClientIdProvider({ children }) {
-  const [clientId, setClientId] = useState("");
+export const ClientIdProvider = ({ children }) => {
+  const [clientId, setClientId] = useState(null);
 
   useEffect(() => {
-    const id = generateClientId();
-    setClientId(id);
-  }, []);
+    // Generate the client ID only once
+    const storedClientId = localStorage.getItem("clientId");
+    if (storedClientId) {
+      setClientId(storedClientId);
+    } else {
+      const id = generateClientId();
+      localStorage.setItem("clientId", id);
+      setClientId(id);
+    }
+  }, [clientId]);
 
   return (
     <ClientIdContext.Provider value={clientId}>
       {children}
     </ClientIdContext.Provider>
   );
-}
+};
 
 export default ClientIdContext;

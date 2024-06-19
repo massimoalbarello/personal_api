@@ -12,20 +12,21 @@ const MyProfile = () => {
   const clientId = useContext(ClientIdContext);
 
   useEffect(() => {
-    if (state && code) {
+    if (state && code && clientId) {
+      console.log("Client Id:", clientId);
       fetch(authApiBaseUrl + "/auth", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Client-Id": clientId,
         },
-        body: JSON.stringify({ state, code, id: clientId }),
+        body: JSON.stringify({ state, code }),
       })
         .then((response) => response.json())
         .then((data) => console.log(data))
         .catch((error) => console.error("Error:", error));
     }
-  }, [state, code]);
+  }, [state, code, clientId]);
 
   return (
     <div>
