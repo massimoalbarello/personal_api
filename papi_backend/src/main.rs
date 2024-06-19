@@ -46,7 +46,8 @@ async fn main() {
             App::new()
                 .wrap(
                     Cors::default()
-                        // .allowed_origin("http://localhost:3000")
+                        // TODO: limit origin
+                        .allow_any_origin()
                         .allowed_methods(vec!["GET", "POST"])
                         .allow_any_header(),
                 )
