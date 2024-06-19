@@ -1,22 +1,25 @@
 "use client";
 
-import { useEffect } from "react";
+import { useContext, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
+import ClientIdContext from "../ClientIdContext";
 
 const MyProfile = () => {
   const searchParams = useSearchParams();
   const state = searchParams.get("state");
   const code = searchParams.get("code");
+  const authApiBaseUrl = process.env.NEXT_PUBLIC_AUTH_API_BASE_URL;
+  const clientId = useContext(ClientIdContext);
 
   useEffect(() => {
     if (state && code) {
-      fetch("http://127.0.0.1:8080/auth", {
+      fetch(authApiBaseUrl + "/auth", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Client-Id": "123",
+          "X-Client-Id": clientId,
         },
-        body: JSON.stringify({ state, code, id: "123" }),
+        body: JSON.stringify({ state, code, id: clientId }),
       })
         .then((response) => response.json())
         .then((data) => console.log(data))

@@ -12,3 +12,4 @@ papi_line/.env
 # Next Frontend
 papi_frontend/.next
 papi_frontend/node_modules
+papi_frontend/.env

@@ -1,16 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useContext } from "react";
+import ClientIdContext from "../ClientIdContext";
 
 export default function PapiLogin() {
   const [authUrl, setAuthUrl] = useState("");
+  const authApiBaseUrl = process.env.NEXT_PUBLIC_AUTH_API_BASE_URL;
+  const clientId = useContext(ClientIdContext);
 
+  console.log(authApiBaseUrl);
   useEffect(() => {
-    fetch("http://127.0.0.1:8080/auth", {
+    fetch(authApiBaseUrl + "/auth", {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        "X-Client-Id": "123",
+        "X-Client-Id": clientId,
       },
     })
       .then((response) => response.json())
