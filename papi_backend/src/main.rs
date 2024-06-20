@@ -7,6 +7,8 @@ use papi_line_client::PapiLineClient;
 
 use actix_web::{web::Data, App, HttpServer};
 use dotenv::dotenv;
+use rustls::{Certificate, PrivateKey, ServerConfig};
+use rustls_pemfile::{certs, pkcs8_private_keys};
 use tokio::{
     select,
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
@@ -18,37 +20,44 @@ mod papi_line_client;
 
 const RESOURCES: [&str; 3] = ["myactivity.search", "myactivity.maps", "myactivity.youtube"];
 
+fn load_certs() -> Result<ServerConfig, String> {
+    let cert_file = &mut BufReader::new(
+        File::open(env::var("CERT_FILE_PATH").expect("CERT_FILE_PATH must be set"))
+            .map_err(|e| e.to_string())?,
+    );
+    let key_file = &mut BufReader::new(
+        File::open(env::var("KEY_FILE_PATH").expect("KEY_FILE_PATH must be set"))
+            .map_err(|e| e.to_string())?,
+    );
+
+    let cert_chain = certs(cert_file)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(Certificate)
+        .collect();
+    let mut keys: Vec<PrivateKey> = pkcs8_private_keys(key_file)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(PrivateKey)
+        .collect();
+
+    if keys.is_empty() {
+        return Err("Could not locate PKCS 8 private keys.".to_string());
+    }
+
+    let config = ServerConfig::builder()
+        .with_safe_defaults()
+        .with_no_client_auth();
+    config
+        .with_single_cert(cert_chain, keys.remove(0))
+        .map_err(|e| e.to_string())
+}
+
 #[actix_web::main]
 async fn main() {
     dotenv().ok();
 
-    rustls::crypto::aws_lc_rs::default_provider()
-        .install_default()
-        .unwrap();
-
-    let mut certs_file = BufReader::new(
-        File::open(env::var("CERT_FILE_PATH").expect("CERT_FILE_PATH must be set")).unwrap(),
-    );
-    let mut key_file = BufReader::new(
-        File::open(env::var("KEY_FILE_PATH").expect("KEY_FILE_PATH must be set")).unwrap(),
-    );
-
-    // load TLS certs and key
-    // to create a self-signed temporary cert for testing:
-    // `openssl req -x509 -newkey rsa:4096 -nodes -keyout key.pem -out cert.pem -days 365 -subj '/CN=localhost'`
-    let tls_certs = rustls_pemfile::certs(&mut certs_file)
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-    let tls_key = rustls_pemfile::pkcs8_private_keys(&mut key_file)
-        .next()
-        .unwrap()
-        .unwrap();
-
-    // set up TLS config options
-    let tls_config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(tls_certs, rustls::pki_types::PrivateKeyDer::Pkcs8(tls_key))
-        .unwrap();
+    let tls_config = load_certs().unwrap();
 
     // app state initialized inside the closure passed to HttpServer::new is local to the worker thread and may become de-synced if modified
     // to achieve globally shared state, it must be created outside of the closure passed to HttpServer::new and moved/cloned in
@@ -84,9 +93,7 @@ async fn main() {
                 .app_data(Data::clone(&authorization_tx))
                 .configure(auth_config)
         })
-        .bind(("0.0.0.0", 8080))
-        .unwrap()
-        .bind_rustls_0_23(("0.0.0.0", 443), tls_config)
+        .bind_rustls(("0.0.0.0", 443), tls_config)
         .unwrap()
         .run()
         .await
