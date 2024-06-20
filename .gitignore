@@ -4,6 +4,8 @@ papi_backend/target/
 papi_backend/**/*.rs.bk
 papi_backend/*.pdb
 papi_backend/.env
+papi_backend/key.pem
+papi_backend/cert.pem
 
 # Python Pipeline
 papi_line/users_datalake
