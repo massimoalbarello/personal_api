@@ -88,7 +88,7 @@ from langchain.chains.openai_functions import (
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 
-llm = ChatOpenAI(model="gpt-3.5-turbo-16k", temperature=0)
+llm = ChatOpenAI(model="gpt-3.5-turbo-0125", temperature=0)
 
 def get_extraction_chain(
     allowed_nodes: Optional[List[str]] = None,
