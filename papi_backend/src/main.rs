@@ -57,6 +57,9 @@ fn load_certs() -> Result<ServerConfig, String> {
 async fn main() {
     dotenv().ok();
 
+    // to create a self-signed temporary cert for testing:
+    // `openssl req -x509 -newkey rsa:4096 -nodes -keyout key.pem -out cert.pem -days 365 -subj '/CN=localhost'`
+    // these are stored in the root cargo directory as "key.pem" and "cert.pem"
     let tls_config = load_certs().unwrap();
 
     // app state initialized inside the closure passed to HttpServer::new is local to the worker thread and may become de-synced if modified
@@ -93,7 +96,7 @@ async fn main() {
                 .app_data(Data::clone(&authorization_tx))
                 .configure(auth_config)
         })
-        .bind_rustls(("0.0.0.0", 443), tls_config)
+        .bind_rustls(("0.0.0.0", 8443), tls_config)
         .unwrap()
         .run()
         .await
