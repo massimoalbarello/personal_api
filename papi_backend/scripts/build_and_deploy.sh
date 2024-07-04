@@ -14,8 +14,8 @@ if [ -n "$1" ]; then
     echo "Building $1 docker image..."
     podman build -t $1 .
 
-    # Deploy the docker image
-    echo "Deploying $1 docker image..."
+    # Deploy the docker container based on the image
+    echo "Deploying $1 docker container..."
     podman run -d -p 8443:8443 --name $1 $1
 
     echo "Server listening on https://localhost:8443"

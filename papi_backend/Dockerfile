@@ -11,6 +11,7 @@ RUN rustc --version && cargo --version && gcc --version && openssl version
 WORKDIR /papi_backend
 
 # Copy the entire project into the /papi_backend folder inside the container
+# Exclude the files and folders specified in .dockerignore
 COPY . .
 
 # Build the Rust application
