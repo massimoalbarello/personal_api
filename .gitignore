@@ -1,15 +1,19 @@
+.vscode/
+
 # Rust Backend
 papi_backend/debug/
 papi_backend/target/
 papi_backend/**/*.rs.bk
 papi_backend/*.pdb
 papi_backend/.env
-papi_backend/key.pem
-papi_backend/cert.pem
+papi_backend/test-key.pem
+papi_backend/test-cert.pem
 
 # Python Pipeline
 papi_line/users_datalake
 papi_line/.env
+papi_line/lancedb
+papi_line/ragtest
 
 # Next Frontend
 papi_frontend/.next

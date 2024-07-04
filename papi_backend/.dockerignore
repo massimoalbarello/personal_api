@@ -1,0 +1,9 @@
+.github/
+.vscode/
+target/
+scripts/
+volumes/
+.env.example
+docker-compose.yml
+Dockerfile
+README.md

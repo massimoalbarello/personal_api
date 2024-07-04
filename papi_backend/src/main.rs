@@ -1,16 +1,15 @@
-use std::{env, fs::File, io::BufReader};
-
 use actix_cors::Cors;
 use authorization::{auth_config, types::Authorizations};
 use oauth_client::OAuthClient;
 use papi_line_client::PapiLineClient;
+use std::{env, fs::File, io::BufReader};
 
 use actix_web::{web::Data, App, HttpServer};
 use dotenv::dotenv;
 use rustls::{Certificate, PrivateKey, ServerConfig};
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use tokio::{
-    select,
+    select, signal,
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
 };
 
@@ -82,6 +81,7 @@ async fn main() {
 
     let authorizations_cl = Data::clone(&authorizations);
     tokio::spawn(async move {
+        println!("Starting server...");
         // Start a number of HTTP workers equal to the number of physical CPUs in the system
         HttpServer::new(move || {
             App::new()
@@ -122,6 +122,10 @@ async fn main() {
                     tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
                     let _ = oauth_client.reset_authorization(id).await;
                 }
+            },
+            _ = signal::ctrl_c() => {
+                println!("Shutting down server...");
+                break;
             }
         }
     }
