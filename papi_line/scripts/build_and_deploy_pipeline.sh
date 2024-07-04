@@ -5,7 +5,7 @@ if [ -n "$1" ]; then
     cd "$(dirname "$0")"
 
     # Stop and remove the docker image that might be running
-    source ./stop_and_remove.sh $1
+    source ./stop_and_remove_pipeline.sh $1
 
     # Switch to the parent directory where the Dockerfile is located
     cd ..
@@ -16,9 +16,9 @@ if [ -n "$1" ]; then
 
     # Deploy the docker container based on the image
     echo "Deploying $1 docker container..."
-    podman run -d -p 8443:8443 --name $1 $1
+    podman run -d -p 6969:6969 --name $1 $1
 
-    echo "Server listening on https://localhost:8443"
+    echo "Server listening on http://localhost:6969"
 else
     echo "Need to specify the name of the image to build and run"
 fi
