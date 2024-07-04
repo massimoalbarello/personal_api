@@ -1,6 +1,5 @@
 use reqwest::Client;
-
-const PAPI_LINE_SERVER_ENDPOINT: &str = "http://localhost:6969/download";
+use std::env;
 
 pub struct PapiLineClient {
     client: Client,
@@ -22,7 +21,10 @@ impl PapiLineClient {
 
         let _response = self
             .client
-            .post(PAPI_LINE_SERVER_ENDPOINT)
+            .post(
+                env::var("PAPI_LINE_SERVER_ENDPOINT")
+                    .expect("PAPI_LINE_SERVER_ENDPOINT must be set"),
+            )
             .json(&body)
             .send()
             .await;

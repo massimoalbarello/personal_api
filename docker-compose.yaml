@@ -1,0 +1,32 @@
+# version: "3.8"
+
+services:
+  papi_backend:
+    build: ./papi_backend
+    image: papi_backend:latest
+    container_name: papi_backend
+    ports:
+      - "8443:8443"
+    networks:
+      - personal_api
+    environment:
+      - PAPI_LINE_SERVER_ENDPOINT=http://papi_line:6969/download
+    env_file:
+      - ./papi_backend/.env
+    depends_on:
+      - papi_line
+
+  papi_line:
+    build: ./papi_line
+    image: papi_line:latest
+    container_name: papi_line
+    ports:
+      - "6969:6969"
+    networks:
+      - personal_api
+    env_file:
+      - ./papi_line/.env
+
+networks:
+  personal_api:
+    driver: bridge
