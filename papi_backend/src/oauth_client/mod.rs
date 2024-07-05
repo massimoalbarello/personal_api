@@ -1,7 +1,6 @@
-use std::{collections::HashMap, env, sync::RwLock};
-
-use actix_web::{web::Data, Result};
+use actix_web::Result;
 use reqwest::Client;
+use std::env;
 use tokio::{
     sync::mpsc::UnboundedSender,
     time::{interval, Duration},
@@ -13,55 +12,41 @@ use types::{
     ResetAuthorizationResponsePayload, ResetAuthorizationUrl,
 };
 
-use crate::{authorization::types::AuthorizationState, RESOURCES};
+use crate::{api::types::OAuthInfo, RESOURCES};
 
 mod types;
 
 pub struct OAuthClient {
     client: Client,
-    authorizations: Data<RwLock<HashMap<String, AuthorizationState>>>,
     download_info_tx: UnboundedSender<((String, String), Result<String, String>)>,
 }
 
 impl OAuthClient {
     pub fn new(
-        authorizations: Data<RwLock<HashMap<String, AuthorizationState>>>,
         download_info_tx: UnboundedSender<((String, String), Result<String, String>)>,
     ) -> Self {
         Self {
             client: Client::new(),
-            authorizations,
             download_info_tx,
         }
     }
+
     pub async fn convert_authorization_to_access_token(
         &self,
-        client_id: String,
+        oauth_info: &mut OAuthInfo,
     ) -> Result<(), String> {
-        let auth_code = self
-            .authorizations
-            .read()
-            .unwrap()
-            .get(&client_id)
-            .unwrap()
+        let client_id = oauth_info.user_id();
+        let oauth_state = oauth_info.state();
+        let oauth_code = oauth_info
             .code()
-            .unwrap();
+            .ok_or("Authorization code not found".to_string())?;
 
-        println!("Authrization for client ID {}: {:?}", client_id, auth_code);
-
-        let state = self
-            .authorizations
-            .read()
-            .unwrap()
-            .get(&client_id)
-            .unwrap()
-            .state()
-            .to_string();
+        println!("Authrization for client ID {}: {:?}", client_id, oauth_code);
 
         let params = AccessTokenParams::default()
-            .with_code(auth_code)
+            .with_code(oauth_code)
             .with_redirect_uri(env::var("REDIRECT_URI").expect("REDIRECT_URI must be set"))
-            .with_state(state);
+            .with_state(oauth_state);
         let access_token_url = AccessTokenUrl::new(params).as_url();
 
         println!(
@@ -75,41 +60,36 @@ impl OAuthClient {
             .header("Content-Length", 0) // otherwise the server returns 411
             .send()
             .await
-            .unwrap();
+            .map_err(|e| format!("Error requesting access token: {}", e))?;
 
         if !response.status().is_success() {
-            return Err(response.text().await.unwrap());
+            return Err(response
+                .text()
+                .await
+                .map_err(|e| format!("Error reading response: {}", e))?);
         }
-        let response: AccessTokenResponsePayload = response.json().await.unwrap();
+        let response: AccessTokenResponsePayload = response
+            .json()
+            .await
+            .map_err(|e| format!("Error parsing access token response payload: {}", e))?;
 
         let access_token = response.access_token();
+
         println!("Access token: {:?}", access_token);
 
-        self.authorizations
-            .write()
-            .unwrap()
-            .get_mut(&client_id)
-            .unwrap()
-            .set_access_token(access_token);
+        oauth_info.set_token(access_token);
 
         Ok(())
     }
 
-    pub fn initiate_data_archives(&self, client_id: String) {
-        let access_token = self
-            .authorizations
-            .read()
-            .unwrap()
-            .get(&client_id)
-            .unwrap()
-            .access_token()
-            .unwrap();
-
+    pub fn initiate_data_archives(&self, oauth_info: OAuthInfo) -> Result<(), String> {
         for resource in RESOURCES {
             let oauth_client = Client::clone(&self.client);
-            let access_token = access_token.clone();
             let download_info_tx = self.download_info_tx.clone();
-            let client_id = client_id.clone();
+            let client_id = oauth_info.user_id();
+            let access_token = oauth_info
+                .token()
+                .ok_or("Access token not found".to_string())?;
             tokio::spawn(async move {
                 match initiate_data_archive(
                     oauth_client.clone(),
@@ -124,48 +104,52 @@ impl OAuthClient {
                         {
                             Ok(download_url) => download_info_tx
                                 .send(((client_id, resource), Ok(download_url)))
-                                .unwrap(),
+                                .map_err(|e| format!("Error sending download info: {}", e)),
                             Err(e) => download_info_tx
                                 .send(((client_id, resource), Err(e)))
-                                .unwrap(),
+                                .map_err(|e| format!("Error sending download info: {}", e)),
                         }
                     }
                     Err(e) => download_info_tx
                         .send(((client_id, resource.to_string()), Err(e)))
-                        .unwrap(),
+                        .map_err(|e| format!("Error sending download info: {}", e)),
                 }
             });
         }
-    }
-
-    pub async fn reset_authorization(&self, client_id: String) -> Result<(), String> {
-        let params = ResetAuthorizationParams::default();
-        let reset_authorization_url = ResetAuthorizationUrl::new(params).as_url();
-
-        let access_token = self
-            .authorizations
-            .read()
-            .unwrap()
-            .get(&client_id)
-            .unwrap()
-            .access_token()
-            .unwrap();
-
-        let response = self
-            .client
-            .post(reset_authorization_url)
-            .bearer_auth(access_token)
-            .header("Content-Length", 0) // otherwise the server returns 411
-            .send()
-            .await
-            .unwrap();
-
-        let _: ResetAuthorizationResponsePayload = response.json().await.unwrap();
-
-        println!("Reset authorization for client ID: {}", client_id);
 
         Ok(())
     }
+
+    // TODO: implement reset authorization endpoint called by papi_line after downloads completed
+
+    // pub async fn reset_authorization(&self, client_id: String) -> Result<(), String> {
+    //     let params = ResetAuthorizationParams::default();
+    //     let reset_authorization_url = ResetAuthorizationUrl::new(params).as_url();
+
+    //     let access_token = self
+    //         .authorizations
+    //         .read()
+    //         .unwrap()
+    //         .get(&client_id)
+    //         .unwrap()
+    //         .access_token()
+    //         .unwrap();
+
+    //     let response = self
+    //         .client
+    //         .post(reset_authorization_url)
+    //         .bearer_auth(access_token)
+    //         .header("Content-Length", 0) // otherwise the server returns 411
+    //         .send()
+    //         .await
+    //         .unwrap();
+
+    //     let _: ResetAuthorizationResponsePayload = response.json().await.unwrap();
+
+    //     println!("Reset authorization for client ID: {}", client_id);
+
+    //     Ok(())
+    // }
 }
 
 async fn initiate_data_archive(
@@ -184,9 +168,12 @@ async fn initiate_data_archive(
         .header("Content-Length", 0) // otherwise the server returns 411
         .send()
         .await
-        .unwrap();
+        .map_err(|e| format!("Error initiating data transfer: {}", e))?;
 
-    let response: InitiateArchiveResponsePayload = response.json().await.unwrap();
+    let response: InitiateArchiveResponsePayload = response
+        .json()
+        .await
+        .map_err(|e| format!("Error parsing initiate archive response payload: {}", e))?;
 
     let job_id = response.archive_job_id();
 
@@ -214,7 +201,7 @@ async fn poll_archive_state(
             .header("Content-Length", 0) // otherwise the server returns 411
             .send()
             .await
-            .unwrap();
+            .map_err(|e| format!("Error plling archive state: {}", e))?;
 
         match response.json::<GetArchiveStateResponsePayload>().await {
             Ok(GetArchiveStateResponsePayload::Completed(response)) => {

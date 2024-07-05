@@ -1,32 +1,36 @@
-use crate::RESOURCES;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::env;
 use std::{collections::HashMap, sync::RwLock};
-use uuid::Uuid;
 
-pub type Authorizations = RwLock<HashMap<String, AuthorizationState>>;
+pub type UserId = String;
 
-const AUTHORIZATION_BASE_URL: &str =
-    "https://accounts.google.com/o/oauth2/v2/auth/oauthchooseaccount";
+pub type OAuthState = String;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthorizationState {
-    state: String,
-    code: Option<String>,
-    access_token: Option<String>,
-    resource_res: Vec<(String, Result<String, String>)>,
+pub type OAuthCode = String;
+
+pub type OAuthAccessToken = String;
+
+#[derive(Debug, Clone)]
+pub struct OAuthInfo {
+    user_id: UserId,
+    state: OAuthState,
+    code: Option<OAuthCode>,
+    token: Option<OAuthAccessToken>,
 }
 
-impl AuthorizationState {
-    pub fn new() -> Self {
-        let state = Uuid::new_v4().to_string();
+impl OAuthInfo {
+    pub fn new(user_id: UserId, state: OAuthState) -> Self {
         Self {
+            user_id,
             state,
             code: None,
-            access_token: None,
-            resource_res: Vec::new(),
+            token: None,
         }
+    }
+
+    pub fn user_id(&self) -> UserId {
+        self.user_id.clone()
     }
 
     pub fn state(&self) -> String {
@@ -37,26 +41,23 @@ impl AuthorizationState {
         self.code.clone()
     }
 
-    pub fn access_token(&self) -> Option<String> {
-        self.access_token.clone()
+    pub fn token(&self) -> Option<String> {
+        self.token.clone()
     }
 
-    pub fn set_code(&mut self, code: String) {
+    pub fn set_code(&mut self, code: OAuthCode) {
         self.code = Some(code);
     }
 
-    pub fn set_access_token(&mut self, access_token: String) {
-        self.access_token = Some(access_token);
-    }
-
-    pub fn push_resource(&mut self, resource: String, res: Result<String, String>) {
-        self.resource_res.push((resource, res));
-    }
-
-    pub fn all_resources_processed(&self) -> bool {
-        self.resource_res.len() == RESOURCES.len()
+    pub fn set_token(&mut self, token: OAuthAccessToken) {
+        self.token = Some(token);
     }
 }
+
+pub type UserStateMap = RwLock<HashMap<UserId, OAuthState>>;
+
+const AUTHORIZATION_BASE_URL: &str =
+    "https://accounts.google.com/o/oauth2/v2/auth/oauthchooseaccount";
 
 pub struct AuthorizationUrl {
     endpoint: String,

@@ -1,7 +1,7 @@
 use actix_cors::Cors;
-use authorization::{
+use api::{
     auth_config,
-    types::{AuthorizationState, Authorizations},
+    types::{OAuthInfo, UserStateMap},
 };
 use mongodb::{bson::doc, options::IndexOptions, Client, IndexModel};
 use oauth_client::OAuthClient;
@@ -17,13 +17,13 @@ use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
 };
 
-mod authorization;
+mod api;
 mod oauth_client;
 mod papi_line_client;
 
 const RESOURCES: [&str; 3] = ["myactivity.search", "myactivity.maps", "myactivity.youtube"];
-const AUTH_DB_NAME: &str = "papi_auth";
-const AUTH_COLL_NAME: &str = "authorizations";
+// const AUTH_DB_NAME: &str = "papi_auth";
+// const AUTH_COLL_NAME: &str = "authorizations";
 
 fn load_certs() -> Result<ServerConfig, String> {
     let cert_file = &mut BufReader::new(
@@ -66,17 +66,17 @@ async fn authorization_db_setup() -> Result<Client, String> {
         .await
         .map_err(|e| format!("failed to connect: {:?}", e.to_string()))?;
 
-    let options = IndexOptions::builder().unique(true).build();
-    let model = IndexModel::builder()
-        .keys(doc! { "state": 1 })
-        .options(options)
-        .build();
-    client
-        .database(AUTH_DB_NAME)
-        .collection::<AuthorizationState>(AUTH_COLL_NAME)
-        .create_index(model)
-        .await
-        .map_err(|e| format!("error creating index: {}", e))?;
+    // let options = IndexOptions::builder().unique(true).build();
+    // let model = IndexModel::builder()
+    //     .keys(doc! { "state": 1 })
+    //     .options(options)
+    //     .build();
+    // client
+    //     .database(AUTH_DB_NAME)
+    //     .collection::<AuthorizationState>(AUTH_COLL_NAME)
+    //     .create_index(model)
+    //     .await
+    //     .map_err(|e| format!("error creating index: {}", e))?;
 
     Ok(client)
 }
@@ -95,11 +95,11 @@ async fn main() -> Result<(), String> {
 
     // app state initialized inside the closure passed to HttpServer::new is local to the worker thread and may become de-synced if modified
     // to achieve globally shared state, it must be created outside of the closure passed to HttpServer::new and moved/cloned in
-    let authorizations = Data::new(Authorizations::default());
+    let authorizations = Data::new(UserStateMap::default());
 
     let (authorization_tx, mut authorization_rx): (
-        UnboundedSender<String>,
-        UnboundedReceiver<String>,
+        UnboundedSender<OAuthInfo>,
+        UnboundedReceiver<OAuthInfo>,
     ) = tokio::sync::mpsc::unbounded_channel();
     let authorization_tx = Data::new(authorization_tx);
 
@@ -108,7 +108,7 @@ async fn main() -> Result<(), String> {
         UnboundedReceiver<((String, String), Result<String, String>)>,
     ) = tokio::sync::mpsc::unbounded_channel();
 
-    let oauth_client = OAuthClient::new(Data::clone(&authorizations), download_info_tx);
+    let oauth_client = OAuthClient::new(download_info_tx);
     let papi_line_client = PapiLineClient::new();
 
     let authorizations_cl = Data::clone(&authorizations);
@@ -138,22 +138,21 @@ async fn main() -> Result<(), String> {
 
     loop {
         select! {
-            Some(id) = authorization_rx.recv() => {
+            Some(mut oauth_info) = authorization_rx.recv() => {
                 // convert authorization code to access token
-                if let Ok(()) = oauth_client.convert_authorization_to_access_token(id.clone()).await {
-                    println!("Successfully converted authorization code to access token for client ID: {}", id);
-                    oauth_client.initiate_data_archives(id.clone());
+                if let Ok(()) = oauth_client.convert_authorization_to_access_token(&mut oauth_info).await {
+                    if let Err(e) = oauth_client.initiate_data_archives(oauth_info) {
+                        println!("Error initializing data archives: {}", e);
+                    }
+                } else {
+                    println!("Error converting authorization code to access token: {:?}", oauth_info);
                 }
             },
             Some(((id, resource), resource_res)) = download_info_rx.recv() => {
                 if let Ok(download_url) = &resource_res {
                     papi_line_client.post_download_urls(&id, &resource, download_url).await;
-                }
-                authorizations.write().unwrap().get_mut(&id).unwrap().push_resource(resource, resource_res);
-                if authorizations.read().unwrap().get(&id).unwrap().all_resources_processed() {
-                    // wait 30 seconds for dowloading the data before resetting the authorization
-                    tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
-                    let _ = oauth_client.reset_authorization(id).await;
+                } else {
+                    println!("Error getting download URL: {:?}", resource_res);
                 }
             },
             _ = signal::ctrl_c() => {
