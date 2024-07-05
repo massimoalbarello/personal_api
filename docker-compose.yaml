@@ -21,8 +21,9 @@ services:
     build: ./papi_line
     image: papi_line:latest
     container_name: papi_line
-    ports:
-      - "6969:6969"
+    # papi_line should be accessible only from papi_backend
+    # ports:
+    #   - "6969:6969"
     networks:
       - personal_api
     env_file:
@@ -33,8 +34,9 @@ services:
   authorization_db:
     image: mongo:latest
     container_name: authorization_db
-    ports:
-      - "27017:27017"
+    # authorization_db should be accessible only from papi_backend
+    # ports:
+    #   - "27017:27017"
     networks:
       - personal_api
 
