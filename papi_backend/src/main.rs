@@ -27,11 +27,11 @@ const AUTH_COLL_NAME: &str = "authorizations";
 
 fn load_certs() -> Result<ServerConfig, String> {
     let cert_file = &mut BufReader::new(
-        File::open(env::var("CERT_FILE_PATH").expect("CERT_FILE_PATH must be set"))
+        File::open(env::var("CERT_FILE_PATH").map_err(|_| "CERT_FILE_PATH must be set")?)
             .map_err(|e| e.to_string())?,
     );
     let key_file = &mut BufReader::new(
-        File::open(env::var("KEY_FILE_PATH").expect("KEY_FILE_PATH must be set"))
+        File::open(env::var("KEY_FILE_PATH").map_err(|_| "KEY_FILE_PATH must be set")?)
             .map_err(|e| e.to_string())?,
     );
 
@@ -60,11 +60,11 @@ fn load_certs() -> Result<ServerConfig, String> {
 
 async fn authorization_db_setup() -> Result<Client, String> {
     let auth_db_uri =
-        std::env::var("AUTHORIZATION_DB_URI").expect("AUTHORIZATION_DB_URI must be set");
+        std::env::var("AUTHORIZATION_DB_URI").map_err(|_| "AUTHORIZATION_DB_URI must be set")?;
 
     let client = Client::with_uri_str(auth_db_uri)
         .await
-        .expect("failed to connect");
+        .map_err(|e| format!("failed to connect: {:?}", e.to_string()))?;
 
     let options = IndexOptions::builder().unique(true).build();
     let model = IndexModel::builder()
@@ -76,21 +76,21 @@ async fn authorization_db_setup() -> Result<Client, String> {
         .collection::<AuthorizationState>(AUTH_COLL_NAME)
         .create_index(model)
         .await
-        .expect("creating an index should succeed");
+        .map_err(|e| format!("error creating index: {}", e))?;
 
     Ok(client)
 }
 
 #[actix_web::main]
-async fn main() {
+async fn main() -> Result<(), String> {
     dotenv().ok();
 
     // to create a self-signed temporary cert for testing:
     // `openssl req -x509 -newkey rsa:4096 -nodes -keyout key.pem -out cert.pem -days 365 -subj '/CN=localhost'`
     // these are stored in the root cargo directory as "key.pem" and "cert.pem"
-    let tls_config = load_certs().unwrap();
+    let tls_config = load_certs()?;
 
-    let auth_db_client = authorization_db_setup().await.unwrap();
+    let auth_db_client = authorization_db_setup().await?;
     let auth_db_client = Data::new(auth_db_client);
 
     // app state initialized inside the closure passed to HttpServer::new is local to the worker thread and may become de-synced if modified
@@ -162,4 +162,6 @@ async fn main() {
             }
         }
     }
+
+    Ok(())
 }
