@@ -1,5 +1,9 @@
 use actix_cors::Cors;
-use authorization::{auth_config, types::Authorizations};
+use authorization::{
+    auth_config,
+    types::{AuthorizationState, Authorizations},
+};
+use mongodb::{bson::doc, options::IndexOptions, Client, IndexModel};
 use oauth_client::OAuthClient;
 use papi_line_client::PapiLineClient;
 use std::{env, fs::File, io::BufReader};
@@ -18,6 +22,8 @@ mod oauth_client;
 mod papi_line_client;
 
 const RESOURCES: [&str; 3] = ["myactivity.search", "myactivity.maps", "myactivity.youtube"];
+const AUTH_DB_NAME: &str = "papi_auth";
+const AUTH_COLL_NAME: &str = "authorizations";
 
 fn load_certs() -> Result<ServerConfig, String> {
     let cert_file = &mut BufReader::new(
@@ -52,6 +58,29 @@ fn load_certs() -> Result<ServerConfig, String> {
         .map_err(|e| e.to_string())
 }
 
+async fn authorization_db_setup() -> Result<Client, String> {
+    let auth_db_uri =
+        std::env::var("AUTHORIZATION_DB_URI").expect("AUTHORIZATION_DB_URI must be set");
+
+    let client = Client::with_uri_str(auth_db_uri)
+        .await
+        .expect("failed to connect");
+
+    let options = IndexOptions::builder().unique(true).build();
+    let model = IndexModel::builder()
+        .keys(doc! { "state": 1 })
+        .options(options)
+        .build();
+    client
+        .database(AUTH_DB_NAME)
+        .collection::<AuthorizationState>(AUTH_COLL_NAME)
+        .create_index(model)
+        .await
+        .expect("creating an index should succeed");
+
+    Ok(client)
+}
+
 #[actix_web::main]
 async fn main() {
     dotenv().ok();
@@ -60,6 +89,9 @@ async fn main() {
     // `openssl req -x509 -newkey rsa:4096 -nodes -keyout key.pem -out cert.pem -days 365 -subj '/CN=localhost'`
     // these are stored in the root cargo directory as "key.pem" and "cert.pem"
     let tls_config = load_certs().unwrap();
+
+    let auth_db_client = authorization_db_setup().await.unwrap();
+    let auth_db_client = Data::new(auth_db_client);
 
     // app state initialized inside the closure passed to HttpServer::new is local to the worker thread and may become de-synced if modified
     // to achieve globally shared state, it must be created outside of the closure passed to HttpServer::new and moved/cloned in
@@ -94,6 +126,7 @@ async fn main() {
                 )
                 .app_data(Data::clone(&authorizations_cl))
                 .app_data(Data::clone(&authorization_tx))
+                .app_data(Data::clone(&auth_db_client))
                 .configure(auth_config)
         })
         .bind_rustls(("0.0.0.0", 8443), tls_config)

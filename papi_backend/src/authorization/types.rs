@@ -10,7 +10,7 @@ pub type Authorizations = RwLock<HashMap<String, AuthorizationState>>;
 const AUTHORIZATION_BASE_URL: &str =
     "https://accounts.google.com/o/oauth2/v2/auth/oauthchooseaccount";
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthorizationState {
     state: String,
     code: Option<String>,

@@ -5,3 +5,4 @@ tests/
 scripts/
 knowledge_graph_env/
 users_datalake/
+.env

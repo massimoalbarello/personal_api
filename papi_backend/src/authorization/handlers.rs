@@ -2,6 +2,7 @@ use actix_web::{
     web::{Data, Json},
     HttpRequest, HttpResponse, Responder,
 };
+use mongodb::Client;
 use std::env;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -10,12 +11,16 @@ use crate::{
         AuthorizationCodeRequestPayload, AuthorizationParams, AuthorizationState, AuthorizationUrl,
         Authorizations,
     },
-    RESOURCES,
+    AUTH_COLL_NAME, AUTH_DB_NAME, RESOURCES,
 };
 
 const DATA_PORTABILITY_BASE_URL: &str = "https://www.googleapis.com/auth/dataportability.";
 
-pub async fn get_google_oauth_url(req: HttpRequest, auth: Data<Authorizations>) -> impl Responder {
+pub async fn get_google_oauth_url(
+    req: HttpRequest,
+    auth: Data<Authorizations>,
+    auth_db_client: Data<Client>,
+) -> impl Responder {
     let client_id = req
         .headers()
         .get("X-Client-Id")
@@ -41,11 +46,19 @@ pub async fn get_google_oauth_url(req: HttpRequest, auth: Data<Authorizations>) 
         client_id, auth_url
     );
 
-    auth.write().unwrap().insert(client_id, auth_state);
+    auth.write().unwrap().insert(client_id, auth_state.clone());
 
-    HttpResponse::Ok()
-        .content_type("application/json")
-        .json(serde_json::json!({"url": auth_url}))
+    let collection = auth_db_client
+        .database(AUTH_DB_NAME)
+        .collection(AUTH_COLL_NAME);
+    let result = collection.insert_one(auth_state).await;
+
+    match result {
+        Ok(_) => HttpResponse::Ok()
+            .content_type("application/json")
+            .json(serde_json::json!({"url": auth_url})),
+        Err(err) => HttpResponse::InternalServerError().body(err.to_string()),
+    }
 }
 
 pub async fn post_google_authorization_code(
