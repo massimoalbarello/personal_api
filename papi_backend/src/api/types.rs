@@ -15,16 +15,16 @@ pub type OAuthAccessToken = String;
 pub struct OAuthInfo {
     user_id: UserId,
     state: OAuthState,
-    code: Option<OAuthCode>,
+    code: OAuthCode,
     token: Option<OAuthAccessToken>,
 }
 
 impl OAuthInfo {
-    pub fn new(user_id: UserId, state: OAuthState) -> Self {
+    pub fn new(user_id: UserId, state: OAuthState, code: OAuthCode) -> Self {
         Self {
             user_id,
             state,
-            code: None,
+            code,
             token: None,
         }
     }
@@ -37,16 +37,12 @@ impl OAuthInfo {
         self.state.clone()
     }
 
-    pub fn code(&self) -> Option<String> {
+    pub fn code(&self) -> String {
         self.code.clone()
     }
 
     pub fn token(&self) -> Option<String> {
         self.token.clone()
-    }
-
-    pub fn set_code(&mut self, code: OAuthCode) {
-        self.code = Some(code);
     }
 
     pub fn set_token(&mut self, token: OAuthAccessToken) {

@@ -2,7 +2,7 @@
 
 import { useContext, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import ClientIdContext from "../ClientIdContext";
+import ClientIdContext from "../../ClientIdContext";
 
 const MyProfile = () => {
   const searchParams = useSearchParams();

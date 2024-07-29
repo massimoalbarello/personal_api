@@ -37,9 +37,7 @@ impl OAuthClient {
     ) -> Result<(), String> {
         let client_id = oauth_info.user_id();
         let oauth_state = oauth_info.state();
-        let oauth_code = oauth_info
-            .code()
-            .ok_or("Authorization code not found".to_string())?;
+        let oauth_code = oauth_info.code();
 
         println!("Authrization for client ID {}: {:?}", client_id, oauth_code);
 

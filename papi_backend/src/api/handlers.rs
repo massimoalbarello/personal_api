@@ -31,7 +31,7 @@ fn get_client_id(req: HttpRequest) -> Result<String, String> {
 pub fn get_google_oauth_url(
     req: HttpRequest,
     auth: Data<UserStateMap>,
-    auth_db_client: Data<Client>,
+    // auth_db_client: Data<Client>,
 ) -> Result<String, String> {
     let client_id = get_client_id(req)?;
 
@@ -73,7 +73,7 @@ pub async fn post_google_authorization_code(
         .map_err(|e| format!("Lock is poisoned: {}", e))?
         .remove(&client_id)
     {
-        if oauth_state.clone() != payload.state() {
+        if oauth_state != payload.state() {
             return Err(format!(
                 "User with ID: {} sent invalid state. Expected: {}, got: {}",
                 client_id,
@@ -82,14 +82,14 @@ pub async fn post_google_authorization_code(
             ));
         }
 
-        let auth_code = payload.code();
+        let oauth_code = payload.code();
 
         println!(
             "User with ID: {} posted authorization code: {}",
-            client_id, auth_code
+            client_id, oauth_code
         );
 
-        let oauth_info = OAuthInfo::new(client_id, oauth_state);
+        let oauth_info = OAuthInfo::new(client_id, oauth_state, oauth_code);
 
         authorization_tx.send(oauth_info).unwrap();
 

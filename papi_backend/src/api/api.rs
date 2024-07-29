@@ -17,9 +17,10 @@ pub const DATA_PORTABILITY_BASE_URL: &str = "https://www.googleapis.com/auth/dat
 pub async fn get_auth_api(
     req: HttpRequest,
     auth: Data<UserStateMap>,
-    auth_db_client: Data<Client>,
+    // auth_db_client: Data<Client>,
 ) -> impl Responder {
-    match get_google_oauth_url(req, auth, auth_db_client) {
+    println!("Got request: {:?}", req);
+    match get_google_oauth_url(req, auth) {
         Ok(auth_url) => HttpResponse::Ok()
             .content_type("application/json")
             .json(serde_json::json!({"url": auth_url})),

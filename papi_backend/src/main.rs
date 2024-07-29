@@ -21,7 +21,7 @@ mod api;
 mod oauth_client;
 mod papi_line_client;
 
-const RESOURCES: [&str; 3] = ["myactivity.search", "myactivity.maps", "myactivity.youtube"];
+const RESOURCES: [&str; 2] = ["myactivity.search", "myactivity.shopping"];
 // const AUTH_DB_NAME: &str = "papi_auth";
 // const AUTH_COLL_NAME: &str = "authorizations";
 
@@ -90,8 +90,8 @@ async fn main() -> Result<(), String> {
     // these are stored in the root cargo directory as "key.pem" and "cert.pem"
     let tls_config = load_certs()?;
 
-    let auth_db_client = authorization_db_setup().await?;
-    let auth_db_client = Data::new(auth_db_client);
+    // let auth_db_client = authorization_db_setup().await?;
+    // let auth_db_client = Data::new(auth_db_client);
 
     // app state initialized inside the closure passed to HttpServer::new is local to the worker thread and may become de-synced if modified
     // to achieve globally shared state, it must be created outside of the closure passed to HttpServer::new and moved/cloned in
@@ -126,10 +126,13 @@ async fn main() -> Result<(), String> {
                 )
                 .app_data(Data::clone(&authorizations_cl))
                 .app_data(Data::clone(&authorization_tx))
-                .app_data(Data::clone(&auth_db_client))
+                // .app_data(Data::clone(&auth_db_client))
                 .configure(auth_config)
         })
         .bind_rustls(("0.0.0.0", 8443), tls_config)
+        .unwrap()
+        // TODO: remove in production
+        .bind(("0.0.0.0", 8080))
         .unwrap()
         .run()
         .await
@@ -140,12 +143,15 @@ async fn main() -> Result<(), String> {
         select! {
             Some(mut oauth_info) = authorization_rx.recv() => {
                 // convert authorization code to access token
-                if let Ok(()) = oauth_client.convert_authorization_to_access_token(&mut oauth_info).await {
-                    if let Err(e) = oauth_client.initiate_data_archives(oauth_info) {
-                        println!("Error initializing data archives: {}", e);
+                match oauth_client.convert_authorization_to_access_token(&mut oauth_info).await {
+                    Ok(()) => {
+                        if let Err(e) = oauth_client.initiate_data_archives(oauth_info) {
+                            println!("Error initializing data archives: {}", e);
+                        }
+                    },
+                    Err(e) => {
+                        println!("Error converting authorization code to access token: {:?}", e);
                     }
-                } else {
-                    println!("Error converting authorization code to access token: {:?}", oauth_info);
                 }
             },
             Some(((id, resource), resource_res)) = download_info_rx.recv() => {

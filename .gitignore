@@ -8,6 +8,7 @@ papi_backend/*.pdb
 papi_backend/.env
 papi_backend/test-key.pem
 papi_backend/test-cert.pem
+papi_backend/fabric_dp_api_web_oauth_token.json
 
 # Python Pipeline
 papi_line/users_datalake
@@ -19,3 +20,6 @@ papi_line/ragtest
 papi_frontend/.next
 papi_frontend/node_modules
 papi_frontend/.env
+
+# Mongo DB
+papi_db/

@@ -39,7 +39,8 @@ services:
     #   - "27017:27017"
     networks:
       - personal_api
-
+    volumes:
+      - ./papi_db:/data/db
 networks:
   personal_api:
     driver: bridge
