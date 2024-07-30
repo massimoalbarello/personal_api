@@ -12,7 +12,10 @@ use types::{
     ResetAuthorizationResponsePayload, ResetAuthorizationUrl,
 };
 
-use crate::{api::types::OAuthInfo, RESOURCES};
+use crate::{
+    api::types::{OAuthInfo, ResourceState},
+    REQUESTED_RESOURCES,
+};
 
 mod types;
 
@@ -71,22 +74,23 @@ impl OAuthClient {
             .await
             .map_err(|e| format!("Error parsing access token response payload: {}", e))?;
 
+        println!("Granted access token: {:?}", response);
         let access_token = response.access_token();
+        let expires_in = response.expires_in();
+        let scope = response.scope();
 
-        println!("Access token: {:?}", access_token);
-
-        oauth_info.set_token(access_token);
+        oauth_info.set_access_token(access_token, expires_in, scope);
 
         Ok(())
     }
 
-    pub fn initiate_data_archives(&self, oauth_info: OAuthInfo) -> Result<(), String> {
-        for resource in RESOURCES {
+    pub fn initiate_data_archives(&self, oauth_info: &mut OAuthInfo) -> Result<(), String> {
+        for resource in REQUESTED_RESOURCES {
             let oauth_client = Client::clone(&self.client);
             let download_info_tx = self.download_info_tx.clone();
             let client_id = oauth_info.user_id();
             let access_token = oauth_info
-                .token()
+                .access_token()
                 .ok_or("Access token not found".to_string())?;
             tokio::spawn(async move {
                 match initiate_data_archive(
@@ -113,6 +117,7 @@ impl OAuthClient {
                         .map_err(|e| format!("Error sending download info: {}", e)),
                 }
             });
+            oauth_info.update_granted_resource(resource, ResourceState::Initiated);
         }
 
         Ok(())
@@ -217,6 +222,7 @@ async fn poll_archive_state(
                 // TODO: distinguish the case in which the server returns an error
                 //       from the ones in which the job has failed
                 //       for now we just assume that each job eventually completes
+                //       some info on the retry logic: https://developers.google.com/data-portability/user-guide/methods#archivejobsretryportabilityarchive
                 let error = format!("Job with ID {} failed: {:?}", job_id, e);
                 println!("{}", error);
                 return Err(error);

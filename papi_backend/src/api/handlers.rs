@@ -13,7 +13,7 @@ use crate::{
         api::DATA_PORTABILITY_BASE_URL,
         types::{AuthorizationParams, AuthorizationUrl},
     },
-    RESOURCES,
+    REQUESTED_RESOURCES,
 };
 
 fn get_client_id(req: HttpRequest) -> Result<String, String> {
@@ -40,7 +40,7 @@ pub fn get_google_oauth_url(
     let params = AuthorizationParams::default()
         .with_state(oauth_state.clone())
         .with_scope(
-            RESOURCES
+            REQUESTED_RESOURCES
                 .map(|r| format!("{}{}", DATA_PORTABILITY_BASE_URL, r))
                 .join("+"),
         )

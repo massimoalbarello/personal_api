@@ -21,7 +21,7 @@ mod api;
 mod oauth_client;
 mod papi_line_client;
 
-const RESOURCES: [&str; 2] = ["myactivity.search", "myactivity.shopping"];
+const REQUESTED_RESOURCES: [&str; 2] = ["myactivity.search", "myactivity.shopping"];
 // const AUTH_DB_NAME: &str = "papi_auth";
 // const AUTH_COLL_NAME: &str = "authorizations";
 
@@ -145,9 +145,11 @@ async fn main() -> Result<(), String> {
                 // convert authorization code to access token
                 match oauth_client.convert_authorization_to_access_token(&mut oauth_info).await {
                     Ok(()) => {
-                        if let Err(e) = oauth_client.initiate_data_archives(oauth_info) {
+                        if let Err(e) = oauth_client.initiate_data_archives(&mut oauth_info) {
                             println!("Error initializing data archives: {}", e);
                         }
+                        print!("OAuth info: {:?}", oauth_info);
+                        // TODO: store in DB
                     },
                     Err(e) => {
                         println!("Error converting authorization code to access token: {:?}", e);
@@ -156,7 +158,10 @@ async fn main() -> Result<(), String> {
             },
             Some(((id, resource), resource_res)) = download_info_rx.recv() => {
                 if let Ok(download_url) = &resource_res {
-                    papi_line_client.post_download_urls(&id, &resource, download_url).await;
+                    // papi_line_client.post_download_urls(&id, &resource, download_url).await;
+                    // TODO: retrieve oauth_info from DB
+                    // let filenames = papi_line_client.download_file(id, resource, download_url).await;
+                    // println!("Downloaded files: {:?}", filenames);
                 } else {
                     println!("Error getting download URL: {:?}", resource_res);
                 }

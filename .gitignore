@@ -9,6 +9,7 @@ papi_backend/.env
 papi_backend/test-key.pem
 papi_backend/test-cert.pem
 papi_backend/fabric_dp_api_web_oauth_token.json
+papi_backend/users_datalake
 
 # Python Pipeline
 papi_line/users_datalake

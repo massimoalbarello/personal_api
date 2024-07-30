@@ -1,3 +1,5 @@
+use chrono::Utc;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::env;
@@ -9,14 +11,30 @@ pub type OAuthState = String;
 
 pub type OAuthCode = String;
 
-pub type OAuthAccessToken = String;
+pub type AccessToken = String;
+
+#[derive(Debug, Clone)]
+pub enum ResourceState {
+    Granted,
+    Initiated,
+    Downloaded,
+}
+
+pub type Resource = String;
+
+#[derive(Debug, Clone)]
+struct OAuthAccessToken {
+    token: AccessToken,
+    expires_at: i64,
+    granted_resources: HashMap<Resource, ResourceState>,
+}
 
 #[derive(Debug, Clone)]
 pub struct OAuthInfo {
     user_id: UserId,
     state: OAuthState,
     code: OAuthCode,
-    token: Option<OAuthAccessToken>,
+    access_token: Option<OAuthAccessToken>,
 }
 
 impl OAuthInfo {
@@ -25,7 +43,7 @@ impl OAuthInfo {
             user_id,
             state,
             code,
-            token: None,
+            access_token: None,
         }
     }
 
@@ -41,13 +59,46 @@ impl OAuthInfo {
         self.code.clone()
     }
 
-    pub fn token(&self) -> Option<String> {
-        self.token.clone()
+    pub fn access_token(&self) -> Option<String> {
+        self.access_token.as_ref().map(|a| a.token.clone())
     }
 
-    pub fn set_token(&mut self, token: OAuthAccessToken) {
-        self.token = Some(token);
+    pub fn set_access_token(&mut self, token: AccessToken, expires_in: u32, scope: String) {
+        self.access_token = Some(OAuthAccessToken {
+            token,
+            expires_at: Utc::now().timestamp() + expires_in as i64,
+            granted_resources: extract_my_activity_resources(&scope),
+        });
     }
+
+    pub fn update_granted_resource(&mut self, resource: &str, new_resource_state: ResourceState) {
+        match self.access_token.as_mut() {
+            Some(a) => {
+                if let Some(resource_state) = a.granted_resources.get_mut(resource) {
+                    *resource_state = new_resource_state;
+                } else {
+                    print!("User did not grant access to resource: {}", resource);
+                }
+            }
+            None => print!("Access token not found"),
+        }
+    }
+}
+
+fn extract_my_activity_resources(scope: &str) -> HashMap<Resource, ResourceState> {
+    let re =
+        Regex::new(r"https://www.googleapis.com/auth/dataportability\.(myactivity\.\w+)").unwrap();
+    let mut results = HashMap::new();
+
+    for cap in re.captures_iter(scope) {
+        if let Some(matched) = cap.get(1) {
+            results.insert(matched.as_str().to_string(), ResourceState::Granted);
+        } else {
+            print!("Failed to extract resource from {}", scope);
+        }
+    }
+
+    results
 }
 
 pub type UserStateMap = RwLock<HashMap<UserId, OAuthState>>;

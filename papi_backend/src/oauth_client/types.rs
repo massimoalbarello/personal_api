@@ -95,6 +95,14 @@ impl AccessTokenResponsePayload {
     pub fn access_token(&self) -> String {
         self.access_token.clone()
     }
+
+    pub fn expires_in(&self) -> u32 {
+        self.expires_in
+    }
+
+    pub fn scope(&self) -> String {
+        self.scope.clone()
+    }
 }
 
 pub struct InitiateArchiveUrl {
