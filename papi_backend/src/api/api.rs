@@ -2,7 +2,6 @@ use actix_web::{
     web::{Data, Json},
     HttpRequest, HttpResponse, Responder,
 };
-use mongodb::Client;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::api::types::{AuthorizationCodeRequestPayload, UserStateMap};
@@ -14,11 +13,7 @@ use super::{
 
 pub const DATA_PORTABILITY_BASE_URL: &str = "https://www.googleapis.com/auth/dataportability.";
 
-pub async fn get_auth_api(
-    req: HttpRequest,
-    auth: Data<UserStateMap>,
-    // auth_db_client: Data<Client>,
-) -> impl Responder {
+pub async fn get_auth_api(req: HttpRequest, auth: Data<UserStateMap>) -> impl Responder {
     println!("Got request: {:?}", req);
     match get_google_oauth_url(req, auth) {
         Ok(auth_url) => HttpResponse::Ok()

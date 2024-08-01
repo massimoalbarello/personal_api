@@ -13,7 +13,7 @@ pub type OAuthCode = String;
 
 pub type AccessToken = String;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ResourceState {
     Granted,
     Initiated,
@@ -22,14 +22,14 @@ pub enum ResourceState {
 
 pub type Resource = String;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct OAuthAccessToken {
     token: AccessToken,
     expires_at: i64,
     granted_resources: HashMap<Resource, ResourceState>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthInfo {
     user_id: UserId,
     state: OAuthState,

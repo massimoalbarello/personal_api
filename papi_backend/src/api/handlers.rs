@@ -2,7 +2,6 @@ use actix_web::{
     web::{Data, Json},
     HttpRequest,
 };
-use mongodb::Client;
 use std::env;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
@@ -28,11 +27,7 @@ fn get_client_id(req: HttpRequest) -> Result<String, String> {
     Ok(client_id)
 }
 
-pub fn get_google_oauth_url(
-    req: HttpRequest,
-    auth: Data<UserStateMap>,
-    // auth_db_client: Data<Client>,
-) -> Result<String, String> {
+pub fn get_google_oauth_url(req: HttpRequest, auth: Data<UserStateMap>) -> Result<String, String> {
     let client_id = get_client_id(req)?;
 
     let oauth_state = Uuid::new_v4().to_string();

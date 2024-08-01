@@ -1,17 +1,16 @@
 use actix_cors::Cors;
+use actix_web::{web::Data, App, HttpServer};
 use api::{
     auth_config,
     types::{OAuthInfo, UserStateMap},
 };
-use mongodb::{bson::doc, options::IndexOptions, Client, IndexModel};
+use dotenv::dotenv;
+use mongodb::{bson::doc, Client};
 use oauth_client::OAuthClient;
 use papi_line_client::PapiLineClient;
-use std::{env, fs::File, io::BufReader};
-
-use actix_web::{web::Data, App, HttpServer};
-use dotenv::dotenv;
 use rustls::{Certificate, PrivateKey, ServerConfig};
 use rustls_pemfile::{certs, pkcs8_private_keys};
+use std::{env, fs::File, io::BufReader};
 use tokio::{
     select, signal,
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
@@ -22,8 +21,8 @@ mod oauth_client;
 mod papi_line_client;
 
 const REQUESTED_RESOURCES: [&str; 2] = ["myactivity.search", "myactivity.shopping"];
-// const AUTH_DB_NAME: &str = "papi_auth";
-// const AUTH_COLL_NAME: &str = "authorizations";
+const AUTH_DB_NAME: &str = "papi_auth_db";
+const AUTH_COLL_NAME: &str = "user_authorizations";
 
 fn load_certs() -> Result<ServerConfig, String> {
     let cert_file = &mut BufReader::new(
@@ -64,19 +63,15 @@ async fn authorization_db_setup() -> Result<Client, String> {
 
     let client = Client::with_uri_str(auth_db_uri)
         .await
-        .map_err(|e| format!("failed to connect: {:?}", e.to_string()))?;
+        .map_err(|e| format!("failed to connect to DB: {:?}", e.to_string()))?;
 
-    // let options = IndexOptions::builder().unique(true).build();
-    // let model = IndexModel::builder()
-    //     .keys(doc! { "state": 1 })
-    //     .options(options)
-    //     .build();
-    // client
-    //     .database(AUTH_DB_NAME)
-    //     .collection::<AuthorizationState>(AUTH_COLL_NAME)
-    //     .create_index(model)
-    //     .await
-    //     .map_err(|e| format!("error creating index: {}", e))?;
+    client
+        .database(AUTH_DB_NAME)
+        .create_collection(AUTH_COLL_NAME)
+        .await
+        .map_err(|e| format!("failed to create collection: {:?}", e))?;
+
+    println!("Created collection {}", AUTH_COLL_NAME);
 
     Ok(client)
 }
@@ -90,8 +85,7 @@ async fn main() -> Result<(), String> {
     // these are stored in the root cargo directory as "key.pem" and "cert.pem"
     let tls_config = load_certs()?;
 
-    // let auth_db_client = authorization_db_setup().await?;
-    // let auth_db_client = Data::new(auth_db_client);
+    let auth_db_client = authorization_db_setup().await?;
 
     // app state initialized inside the closure passed to HttpServer::new is local to the worker thread and may become de-synced if modified
     // to achieve globally shared state, it must be created outside of the closure passed to HttpServer::new and moved/cloned in
@@ -126,7 +120,6 @@ async fn main() -> Result<(), String> {
                 )
                 .app_data(Data::clone(&authorizations_cl))
                 .app_data(Data::clone(&authorization_tx))
-                // .app_data(Data::clone(&auth_db_client))
                 .configure(auth_config)
         })
         .bind_rustls(("0.0.0.0", 8443), tls_config)
@@ -150,6 +143,7 @@ async fn main() -> Result<(), String> {
                         }
                         print!("OAuth info: {:?}", oauth_info);
                         // TODO: store in DB
+                        // auth_db_client.database(AUTH_DB_NAME).collection(AUTH_COLL_NAME).insert_one(oauth_info).await.unwrap();
                     },
                     Err(e) => {
                         println!("Error converting authorization code to access token: {:?}", e);

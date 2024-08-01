@@ -7,6 +7,8 @@ services:
     container_name: papi_backend
     ports:
       - "8443:8443"
+      # TODO: remove in production
+      - "8080:8080"
     networks:
       - personal_api
     environment:
