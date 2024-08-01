@@ -46,7 +46,7 @@ impl PapiLineClient {
     pub async fn download_file(
         &self,
         id: String,
-        resource: String,
+        resource: &String,
         url: &str,
     ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
         let response = self.client.get(url).send().await?;

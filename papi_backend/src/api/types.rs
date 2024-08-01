@@ -13,7 +13,7 @@ pub type OAuthCode = String;
 
 pub type AccessToken = String;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ResourceState {
     Granted,
     Initiated,
@@ -27,6 +27,38 @@ struct OAuthAccessToken {
     token: AccessToken,
     expires_at: i64,
     granted_resources: HashMap<Resource, ResourceState>,
+}
+
+impl OAuthAccessToken {
+    fn is_expired(&self) -> bool {
+        self.expires_at < Utc::now().timestamp()
+    }
+
+    fn is_expected_resource_state(
+        &self,
+        resource: &str,
+        expected_resource_state: &ResourceState,
+    ) -> Result<bool, String> {
+        let resource_state = self
+            .granted_resources
+            .get(resource)
+            .ok_or(format!("Resource '{:?}' not found", resource))?;
+
+        Ok(resource_state == expected_resource_state)
+    }
+
+    fn update_granted_resource(
+        &mut self,
+        resource: &str,
+        new_resource_state: ResourceState,
+    ) -> Result<(), String> {
+        if let Some(resource_state) = self.granted_resources.get_mut(resource) {
+            *resource_state = new_resource_state;
+            Ok(())
+        } else {
+            Err(format!("Resource '{:?}' not found", resource))
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,16 +103,29 @@ impl OAuthInfo {
         });
     }
 
-    pub fn update_granted_resource(&mut self, resource: &str, new_resource_state: ResourceState) {
+    pub fn is_expired_access_token(&self) -> Option<bool> {
+        self.access_token.as_ref().map(|a| a.is_expired())
+    }
+
+    pub fn is_expected_resource_state(
+        &self,
+        resource: &str,
+        expected_resource_state: &ResourceState,
+    ) -> Result<bool, String> {
+        self.access_token
+            .as_ref()
+            .ok_or("Access token not found")?
+            .is_expected_resource_state(resource, expected_resource_state)
+    }
+
+    pub fn update_granted_resource(
+        &mut self,
+        resource: &str,
+        new_resource_state: ResourceState,
+    ) -> Result<(), String> {
         match self.access_token.as_mut() {
-            Some(a) => {
-                if let Some(resource_state) = a.granted_resources.get_mut(resource) {
-                    *resource_state = new_resource_state;
-                } else {
-                    print!("User did not grant access to resource: {}", resource);
-                }
-            }
-            None => print!("Access token not found"),
+            Some(a) => a.update_granted_resource(resource, new_resource_state),
+            None => Err(format!("Access token not found")),
         }
     }
 }

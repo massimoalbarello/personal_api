@@ -2,7 +2,7 @@ use actix_cors::Cors;
 use actix_web::{web::Data, App, HttpServer};
 use api::{
     auth_config,
-    types::{OAuthInfo, UserStateMap},
+    types::{OAuthInfo, ResourceState, UserStateMap},
 };
 use dotenv::dotenv;
 use mongodb::{bson::doc, Client};
@@ -151,14 +151,24 @@ async fn main() -> Result<(), String> {
                     }
                 }
             },
-            Some(((user_id, resource), resource_res)) = download_info_rx.recv() => {
+            Some(((user_id, ready_to_download_resource), resource_res)) = download_info_rx.recv() => {
                 if let Ok(download_url) = &resource_res {
                     // TODO: find all authorizations by the user and consider only the most recent (should have resources in state 'Initiated')
-                    let oauth_info: OAuthInfo = auth_db_client.database(AUTH_DB_NAME).collection(AUTH_COLL_NAME).find_one(doc! {"user_id": user_id}).await.unwrap().unwrap();
-                    println!("OAuth info post: {:?}", oauth_info);
+                    let mut oauth_info: OAuthInfo = auth_db_client.database(AUTH_DB_NAME).collection(AUTH_COLL_NAME).find_one(doc! {"user_id": user_id.clone()}).await.unwrap().unwrap();
+                    println!("OAuth info post store: {:?}", oauth_info);
                     // TODO: download each resource and set its state to 'Downloaded'
-                    // let filenames = papi_line_client.download_file(id, resource, download_url).await;
-                    // println!("Downloaded files: {:?}", filenames);
+                    if oauth_info.is_expired_access_token().is_some_and(|b| b == false) && oauth_info.is_expected_resource_state(&ready_to_download_resource, &ResourceState::Initiated).is_ok_and(|b| b == true) {
+                        let filenames = papi_line_client.download_file(user_id.clone(), &ready_to_download_resource, download_url).await;
+                        println!("Downloaded files: {:?}", filenames);
+                        if let Err(e) = oauth_info.update_granted_resource(&ready_to_download_resource, ResourceState::Downloaded) {
+                            println!("Error updating resource state: {:?}", e);
+                        }
+                        if let Err(e) = auth_db_client.database(AUTH_DB_NAME).collection(AUTH_COLL_NAME).replace_one(doc! {"user_id": user_id.clone()}, oauth_info).await {
+                            println!("Error storing updated OAuth info: {:?}", e);
+                        }
+                        let oauth_info: OAuthInfo = auth_db_client.database(AUTH_DB_NAME).collection(AUTH_COLL_NAME).find_one(doc! {"user_id": user_id.clone()}).await.unwrap().unwrap();
+                        println!("OAuth info post download: {:?}", oauth_info);
+                    }
                 } else {
                     println!("Error getting download URL: {:?}", resource_res);
                 }
