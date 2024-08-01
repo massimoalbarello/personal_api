@@ -156,18 +156,27 @@ async fn main() -> Result<(), String> {
                     // TODO: find all authorizations by the user and consider only the most recent (should have resources in state 'Initiated')
                     let mut oauth_info: OAuthInfo = auth_db_client.database(AUTH_DB_NAME).collection(AUTH_COLL_NAME).find_one(doc! {"user_id": user_id.clone()}).await.unwrap().unwrap();
                     println!("OAuth info post store: {:?}", oauth_info);
-                    // TODO: download each resource and set its state to 'Downloaded'
                     if oauth_info.is_expired_access_token().is_some_and(|b| b == false) && oauth_info.is_expected_resource_state(&ready_to_download_resource, &ResourceState::Initiated).is_ok_and(|b| b == true) {
                         let filenames = papi_line_client.download_file(user_id.clone(), &ready_to_download_resource, download_url).await;
                         println!("Downloaded files: {:?}", filenames);
-                        if let Err(e) = oauth_info.update_granted_resource(&ready_to_download_resource, ResourceState::Downloaded) {
+                        if let Err(e) = oauth_info.update_granted_resource_state(&ready_to_download_resource, ResourceState::Downloaded) {
                             println!("Error updating resource state: {:?}", e);
+                        }
+                        if oauth_info.is_all_resources_downloaded() {
+                            println!("All resources downloaded, resetting authorization for user {}", user_id);
+                            if let Err(e) = oauth_client.reset_authorization(&mut oauth_info).await {
+                                println!("Error resetting authorization: {:?}", e);
+                            }
                         }
                         if let Err(e) = auth_db_client.database(AUTH_DB_NAME).collection(AUTH_COLL_NAME).replace_one(doc! {"user_id": user_id.clone()}, oauth_info).await {
                             println!("Error storing updated OAuth info: {:?}", e);
                         }
+                        // just checking that storing the updated OAuth info works
+                        // TODO: remove this
                         let oauth_info: OAuthInfo = auth_db_client.database(AUTH_DB_NAME).collection(AUTH_COLL_NAME).find_one(doc! {"user_id": user_id.clone()}).await.unwrap().unwrap();
                         println!("OAuth info post download: {:?}", oauth_info);
+                    } else {
+                        println!("Access token expired or resource not in expected state: {:?}", oauth_info);
                     }
                 } else {
                     println!("Error getting download URL: {:?}", resource_res);

@@ -47,7 +47,7 @@ impl OAuthAccessToken {
         Ok(resource_state == expected_resource_state)
     }
 
-    fn update_granted_resource(
+    fn update_granted_resource_state(
         &mut self,
         resource: &str,
         new_resource_state: ResourceState,
@@ -64,6 +64,7 @@ impl OAuthAccessToken {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthInfo {
     user_id: UserId,
+    created_at: i64,
     state: OAuthState,
     code: OAuthCode,
     access_token: Option<OAuthAccessToken>,
@@ -73,6 +74,7 @@ impl OAuthInfo {
     pub fn new(user_id: UserId, state: OAuthState, code: OAuthCode) -> Self {
         Self {
             user_id,
+            created_at: Utc::now().timestamp(),
             state,
             code,
             access_token: None,
@@ -118,15 +120,26 @@ impl OAuthInfo {
             .is_expected_resource_state(resource, expected_resource_state)
     }
 
-    pub fn update_granted_resource(
+    pub fn update_granted_resource_state(
         &mut self,
         resource: &str,
         new_resource_state: ResourceState,
     ) -> Result<(), String> {
         match self.access_token.as_mut() {
-            Some(a) => a.update_granted_resource(resource, new_resource_state),
+            Some(a) => a.update_granted_resource_state(resource, new_resource_state),
             None => Err(format!("Access token not found")),
         }
+    }
+
+    pub fn is_all_resources_downloaded(&self) -> bool {
+        self.access_token
+            .as_ref()
+            .map(|a| {
+                a.granted_resources
+                    .values()
+                    .all(|s| *s == ResourceState::Downloaded)
+            })
+            .unwrap_or(false)
     }
 }
 

@@ -117,42 +117,38 @@ impl OAuthClient {
                         .map_err(|e| format!("Error sending download info: {}", e)),
                 }
             });
-            oauth_info.update_granted_resource(resource, ResourceState::Initiated);
+            oauth_info.update_granted_resource_state(resource, ResourceState::Initiated);
         }
 
         Ok(())
     }
 
-    // TODO: implement reset authorization endpoint called by papi_line after downloads completed
+    pub async fn reset_authorization(&self, oauth_info: &OAuthInfo) -> Result<(), String> {
+        let params = ResetAuthorizationParams::default();
+        let reset_authorization_url = ResetAuthorizationUrl::new(params).as_url();
 
-    // pub async fn reset_authorization(&self, client_id: String) -> Result<(), String> {
-    //     let params = ResetAuthorizationParams::default();
-    //     let reset_authorization_url = ResetAuthorizationUrl::new(params).as_url();
+        let response = self
+            .client
+            .post(reset_authorization_url)
+            .bearer_auth(
+                oauth_info
+                    .access_token()
+                    .ok_or("Access token not found".to_string())?,
+            )
+            .header("Content-Length", 0) // otherwise the server returns 411
+            .send()
+            .await
+            .unwrap();
 
-    //     let access_token = self
-    //         .authorizations
-    //         .read()
-    //         .unwrap()
-    //         .get(&client_id)
-    //         .unwrap()
-    //         .access_token()
-    //         .unwrap();
+        let _: ResetAuthorizationResponsePayload = response.json().await.unwrap();
 
-    //     let response = self
-    //         .client
-    //         .post(reset_authorization_url)
-    //         .bearer_auth(access_token)
-    //         .header("Content-Length", 0) // otherwise the server returns 411
-    //         .send()
-    //         .await
-    //         .unwrap();
+        println!(
+            "Reset authorization for client ID: {}",
+            oauth_info.user_id()
+        );
 
-    //     let _: ResetAuthorizationResponsePayload = response.json().await.unwrap();
-
-    //     println!("Reset authorization for client ID: {}", client_id);
-
-    //     Ok(())
-    // }
+        Ok(())
+    }
 }
 
 async fn initiate_data_archive(
