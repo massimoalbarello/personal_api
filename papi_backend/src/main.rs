@@ -141,19 +141,22 @@ async fn main() -> Result<(), String> {
                         if let Err(e) = oauth_client.initiate_data_archives(&mut oauth_info) {
                             println!("Error initializing data archives: {}", e);
                         }
-                        print!("OAuth info: {:?}", oauth_info);
-                        // TODO: store in DB
-                        // auth_db_client.database(AUTH_DB_NAME).collection(AUTH_COLL_NAME).insert_one(oauth_info).await.unwrap();
+                        print!("OAuth info pre store: {:?}", oauth_info);
+                        if let Err(e) = auth_db_client.database(AUTH_DB_NAME).collection(AUTH_COLL_NAME).insert_one(oauth_info).await {
+                            println!("Error storing OAuth info: {:?}", e);
+                        }
                     },
                     Err(e) => {
                         println!("Error converting authorization code to access token: {:?}", e);
                     }
                 }
             },
-            Some(((id, resource), resource_res)) = download_info_rx.recv() => {
+            Some(((user_id, resource), resource_res)) = download_info_rx.recv() => {
                 if let Ok(download_url) = &resource_res {
-                    // papi_line_client.post_download_urls(&id, &resource, download_url).await;
-                    // TODO: retrieve oauth_info from DB
+                    // TODO: find all authorizations by the user and consider only the most recent (should have resources in state 'Initiated')
+                    let oauth_info: OAuthInfo = auth_db_client.database(AUTH_DB_NAME).collection(AUTH_COLL_NAME).find_one(doc! {"user_id": user_id}).await.unwrap().unwrap();
+                    println!("OAuth info post: {:?}", oauth_info);
+                    // TODO: download each resource and set its state to 'Downloaded'
                     // let filenames = papi_line_client.download_file(id, resource, download_url).await;
                     // println!("Downloaded files: {:?}", filenames);
                 } else {
