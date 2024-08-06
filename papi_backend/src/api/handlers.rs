@@ -4,7 +4,7 @@ use crate::{
         api::DATA_PORTABILITY_BASE_URL,
         types::{AuthorizationParams, AuthorizationUrl},
     },
-    auth_db_client::{self, AuthDbClient},
+    auth_db_client::AuthDbClient,
     oauth_client::OAuthClient,
     papi_line_client::PapiLineClient,
     REQUESTED_RESOURCES,
@@ -139,40 +139,30 @@ pub async fn handle_data_download(
         .await
         .map_err(|e| format!("could not read last auth for user: {:?}", e))?;
 
-    if oauth_info
-        .is_not_expired_access_token()
-        .is_some_and(|b| b == true)
-        && oauth_info
-            .is_expected_resource_state(&ready_to_download_resource, &ResourceState::Initiated)
-            .is_ok_and(|b| b == true)
-    {
-        let _ = papi_line_client
-            .download_file(user_id.clone(), &ready_to_download_resource, &download_url)
+    oauth_info.validate_initalized_access_token(&ready_to_download_resource)?;
+
+    papi_line_client
+        .download_file(user_id.clone(), &ready_to_download_resource, &download_url)
+        .await
+        .map_err(|e| format!("could not download file: {:?}", e))?;
+
+    oauth_info
+        .update_granted_resource_state(&ready_to_download_resource, ResourceState::Downloaded)
+        .map_err(|e| format!("could not update resource state: {:?}", e))?;
+    if oauth_info.is_all_resources_downloaded() {
+        println!(
+            "All resources downloaded, resetting authorization for user {}",
+            user_id
+        );
+        oauth_client
+            .reset_authorization(&mut oauth_info)
             .await
-            .map_err(|e| format!("could not download file: {:?}", e))?;
-        oauth_info
-            .update_granted_resource_state(&ready_to_download_resource, ResourceState::Downloaded)
-            .map_err(|e| format!("could not update resource state: {:?}", e))?;
-        if oauth_info.is_all_resources_downloaded() {
-            println!(
-                "All resources downloaded, resetting authorization for user {}",
-                user_id
-            );
-            oauth_client
-                .reset_authorization(&mut oauth_info)
-                .await
-                .map_err(|e| format!("could not reset authorization: {:?}", e))?;
-        }
-        auth_db_client
-            .update_auth_for_user(user_id, oauth_info)
-            .await
-            .map_err(|e| format!("could not store updated OAuth info: {:?}", e))?;
-    } else {
-        return Err(format!(
-            "Latest access token expired or resource not in expected state: {:?}",
-            oauth_info
-        ));
+            .map_err(|e| format!("could not reset authorization: {:?}", e))?;
     }
+    auth_db_client
+        .update_auth_for_user(user_id, oauth_info)
+        .await
+        .map_err(|e| format!("could not store updated OAuth info: {:?}", e))?;
 
     Ok(())
 }

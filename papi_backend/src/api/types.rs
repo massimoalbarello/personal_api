@@ -105,11 +105,11 @@ impl OAuthInfo {
         });
     }
 
-    pub fn is_not_expired_access_token(&self) -> Option<bool> {
+    fn is_not_expired_access_token(&self) -> Option<bool> {
         self.access_token.as_ref().map(|a| !a.is_expired())
     }
 
-    pub fn is_expected_resource_state(
+    fn is_expected_resource_state(
         &self,
         resource: &str,
         expected_resource_state: &ResourceState,
@@ -118,6 +118,22 @@ impl OAuthInfo {
             .as_ref()
             .ok_or("Access token not found")?
             .is_expected_resource_state(resource, expected_resource_state)
+    }
+
+    pub fn validate_initalized_access_token(
+        &self,
+        ready_to_download_resource: &String,
+    ) -> Result<(), String> {
+        if self
+            .is_not_expired_access_token()
+            .is_some_and(|b| b == true)
+            && self
+                .is_expected_resource_state(ready_to_download_resource, &ResourceState::Initiated)
+                .is_ok_and(|b| b == true)
+        {
+            return Ok(());
+        }
+        Err("Latest access token expired or resource not in expected state".to_string())
     }
 
     pub fn update_granted_resource_state(

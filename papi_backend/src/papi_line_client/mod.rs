@@ -1,8 +1,9 @@
+use chrono::Utc;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Client, Response};
 use std::env;
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::{self, Cursor};
 use std::path::Path;
 use zip::read::ZipArchive;
 
@@ -25,9 +26,9 @@ impl PapiLineClient {
         }
     }
 
-    pub async fn post_download_urls(&self, id: &str, resource: &str, download_url: &str) {
+    pub async fn post_download_urls(&self, user_id: &str, resource: &str, download_url: &str) {
         let body = serde_json::json!({
-            "id": id,
+            "id": user_id,
             "resource": resource,
             "url": download_url
         });
@@ -43,14 +44,18 @@ impl PapiLineClient {
             .await;
     }
 
-    // TODO: implement this properly
     pub async fn download_file(
         &self,
-        id: String,
+        user_id: String,
         resource: &String,
         url: &str,
-    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-        let response = self.client.get(url).send().await?;
+    ) -> Result<Vec<String>, String> {
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| format!("could not request data download: {:?}", e.to_string()))?;
 
         let content_type = response
             .headers()
@@ -59,66 +64,46 @@ impl PapiLineClient {
             .unwrap_or("");
 
         if ZIP_MIME_TYPES.contains(&content_type) {
-            println!("Unzipping files");
-            let filenames = unzip_and_flatten(&id, response).await?;
+            println!("Unzipping files for resource: {}", resource);
+            let filenames = unzip_and_flatten(&user_id, resource, response)
+                .await
+                .map_err(|e| format!("could not unzip files: {:?}", e.to_string()))?;
             Ok(filenames)
         } else {
-            let content_disposition = response
-                .headers()
-                .get("Content-Disposition")
-                .and_then(|v| v.to_str().ok());
-            println!("File is not a ZIP file:\n{:?}", response.headers());
-
-            if let Some(content_disposition) = content_disposition {
-                if let Some(filename) = extract_filename(content_disposition) {
-                    println!("Saving file: {}", filename);
-                    let file_path = Path::new(USERS_DATALAKE).join(&filename);
-                    let mut file = File::create(file_path)?;
-                    let content = response.bytes().await?;
-                    file.write_all(&content)?;
-                    println!("📁 File {} saved successfully", filename);
-                    Ok(vec![filename])
-                } else {
-                    println!("❗️ The file from the url is not a zip file and does not have a valid filename.");
-                    Ok(vec![])
-                }
-            } else {
-                println!("❗️ The file from the url is not a zip file and does not have a valid filename.");
-                Ok(vec![])
-            }
+            Err(format!("file is not a ZIP file:{:?}", response.headers()))
         }
     }
 }
 
 async fn unzip_and_flatten(
-    id: &str,
+    user_id: &str,
+    resource: &String,
     response: Response,
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let mut zip = ZipArchive::new(io::Cursor::new(response.bytes().await?))?;
+    let mut zip = ZipArchive::new(Cursor::new(response.bytes().await?))?;
     let mut filenames = Vec::new();
 
     for i in 0..zip.len() {
         let mut file = zip.by_index(i)?;
-        let filename = file.name().to_string();
-        let file_path = Path::new(USERS_DATALAKE).join(&filename);
 
-        if let Some(parent) = file_path.parent() {
-            std::fs::create_dir_all(parent)?;
+        if let Some(filename) = file.name().split('/').last() {
+            println!("Extracting file: {:?}", filename);
+            let filename = format!(
+                "{}_{}_{}_{}",
+                Utc::now().timestamp(),
+                user_id,
+                resource,
+                filename
+            );
+            let file_path = Path::new(USERS_DATALAKE).join(&filename);
+
+            let mut outfile = File::create(&file_path)?;
+            io::copy(&mut file, &mut outfile)?;
+            filenames.push(filename);
+        } else {
+            println!("Error parsing file path: {:?}", file.name());
         }
-
-        let mut outfile = File::create(&file_path)?;
-        io::copy(&mut file, &mut outfile)?;
-        filenames.push(filename);
     }
 
     Ok(filenames)
-}
-
-fn extract_filename(content_disposition: &str) -> Option<String> {
-    if let Some(start) = content_disposition.find("filename=") {
-        let filename = &content_disposition[start + 9..].trim_matches('"');
-        Some(filename.to_string())
-    } else {
-        None
-    }
 }
