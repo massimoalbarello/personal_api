@@ -13,7 +13,6 @@ services:
       - personal_api
     environment:
       - PAPI_LINE_SERVER_ENDPOINT=http://papi_line:6969/download
-      - AUTHORIZATION_DB_URI=mongodb://authorization_db:27017/authorizations
     env_file:
       - ./papi_backend/.env
     depends_on:
@@ -33,16 +32,6 @@ services:
     depends_on:
       - authorization_db
 
-  authorization_db:
-    image: mongo:latest
-    container_name: authorization_db
-    # authorization_db should be accessible only from papi_backend
-    # ports:
-    #   - "27017:27017"
-    networks:
-      - personal_api
-    volumes:
-      - ./papi_db:/data/db
 networks:
   personal_api:
     driver: bridge

@@ -1,10 +1,7 @@
-use futures::TryStreamExt;
-use mongodb::{bson::doc, Client};
-
 use crate::api::types::OAuthInfo;
-
-const AUTH_DB_NAME: &str = "papi_auth_db";
-const AUTH_COLL_NAME: &str = "user_authorizations";
+use aws_sdk_dynamodb::{types::AttributeValue, Client};
+use serde_dynamo::{from_item, to_item};
+use std::env;
 
 pub struct AuthDbClient {
     client: Client,
@@ -12,50 +9,56 @@ pub struct AuthDbClient {
 
 impl AuthDbClient {
     pub async fn setup() -> Result<Self, String> {
-        let auth_db_uri = std::env::var("AUTHORIZATION_DB_URI")
-            .map_err(|_| "AUTHORIZATION_DB_URI must be set")?;
-
-        let client = Client::with_uri_str(auth_db_uri)
-            .await
-            .map_err(|e| format!("failed to connect to DB: {:?}", e.to_string()))?;
-
-        client
-            .database(AUTH_DB_NAME)
-            .create_collection(AUTH_COLL_NAME)
-            .await
-            .map_err(|e| format!("failed to create collection: {:?}", e))?;
-
-        println!("Created collection {}", AUTH_COLL_NAME);
+        let config = aws_config::load_from_env().await;
+        let client = Client::new(&config);
 
         Ok(Self { client })
     }
 
     pub async fn create_auth(&self, oauth_info: OAuthInfo) -> Result<(), String> {
+        let item =
+            to_item(&oauth_info).map_err(|e| format!("Failed to serialize OAuthInfo: {}", e))?;
+
         self.client
-            .database(AUTH_DB_NAME)
-            .collection(AUTH_COLL_NAME)
-            .insert_one(oauth_info)
+            .put_item()
+            .table_name(
+                env::var("DYNAMO_DB_AUTH_TABLE_NAME")
+                    .expect("DYNAMO_DB_AUTH_TABLE_NAME must be set"),
+            )
+            .item("user_id", AttributeValue::S(oauth_info.user_id()))
+            .set_item(Some(item))
+            .send()
             .await
             .map_err(|e| format!("Error inserting oauth info: {}", e))?;
+
         Ok(())
     }
 
     pub async fn read_last_auth_for_user(&self, user_id: String) -> Result<OAuthInfo, String> {
-        let mut cursor = self
+        // TODO: make sure that there isn't a better way to query the DB
+        let query_output = self
             .client
-            .database(AUTH_DB_NAME)
-            .collection::<OAuthInfo>(AUTH_COLL_NAME)
-            .find(doc! {"user_id": user_id.clone()})
-            .sort(doc! { "created_at": -1 })
+            .query()
+            .table_name(
+                env::var("DYNAMO_DB_AUTH_TABLE_NAME")
+                    .expect("DYNAMO_DB_AUTH_TABLE_NAME must be set"),
+            )
+            .key_condition_expression("user_id = :user_id")
+            .expression_attribute_values(":user_id", AttributeValue::S(user_id.clone()))
+            .scan_index_forward(false)
             .limit(1)
+            .send()
             .await
             .map_err(|e| format!("Error querying DB: {}", e))?;
 
-        cursor
-            .try_next()
-            .await
-            .map_err(|e| format!("Error resolving next item in stream: {}", e))?
-            .ok_or("No OAuth info found".to_string())
+        let item = query_output
+            .items
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+            .ok_or("No OAuth info found".to_string())?;
+
+        Ok(from_item(item).map_err(|e| format!("Failed to deserialize OAuthInfo: {}", e))?)
     }
 
     pub async fn update_auth_for_user(
@@ -63,12 +66,21 @@ impl AuthDbClient {
         user_id: String,
         oauth_info: OAuthInfo,
     ) -> Result<(), String> {
+        let item =
+            to_item(&oauth_info).map_err(|e| format!("Failed to serialize OAuthInfo: {}", e))?;
+
         self.client
-            .database(AUTH_DB_NAME)
-            .collection(AUTH_COLL_NAME)
-            .replace_one(doc! {"user_id": user_id.clone()}, oauth_info)
+            .put_item()
+            .table_name(
+                env::var("DYNAMO_DB_AUTH_TABLE_NAME")
+                    .expect("DYNAMO_DB_AUTH_TABLE_NAME must be set"),
+            )
+            .item("user_id", AttributeValue::S(user_id))
+            .set_item(Some(item))
+            .send()
             .await
             .map_err(|e| format!("Error updating OAuth info: {}", e))?;
+
         Ok(())
     }
 }
