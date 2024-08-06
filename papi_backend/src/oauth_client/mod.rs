@@ -3,7 +3,7 @@ use reqwest::Client;
 use std::env;
 use tokio::{
     sync::mpsc::UnboundedSender,
-    time::{interval, Duration},
+    time::{interval, Duration, Instant},
 };
 use types::{
     AccessTokenParams, AccessTokenResponsePayload, AccessTokenUrl, GetArchiveStateParams,
@@ -21,12 +21,12 @@ mod types;
 
 pub struct OAuthClient {
     client: Client,
-    download_info_tx: UnboundedSender<((String, String), Result<String, String>)>,
+    download_info_tx: UnboundedSender<(String, String, Result<String, String>)>,
 }
 
 impl OAuthClient {
     pub fn new(
-        download_info_tx: UnboundedSender<((String, String), Result<String, String>)>,
+        download_info_tx: UnboundedSender<(String, String, Result<String, String>)>,
     ) -> Self {
         Self {
             client: Client::new(),
@@ -38,11 +38,14 @@ impl OAuthClient {
         &self,
         oauth_info: &mut OAuthInfo,
     ) -> Result<(), String> {
-        let client_id = oauth_info.user_id();
+        let user_id = oauth_info.user_id();
         let oauth_state = oauth_info.state();
         let oauth_code = oauth_info.code();
 
-        println!("Authrization for client ID {}: {:?}", client_id, oauth_code);
+        println!(
+            "Authorization code for client ID {}: {:?}",
+            user_id, oauth_code
+        );
 
         let params = AccessTokenParams::default()
             .with_code(oauth_code)
@@ -52,7 +55,7 @@ impl OAuthClient {
 
         println!(
             "Converting auth code to access token for client ID: {}",
-            client_id
+            user_id
         );
 
         let response = self
@@ -88,7 +91,7 @@ impl OAuthClient {
         for resource in REQUESTED_RESOURCES {
             let oauth_client = Client::clone(&self.client);
             let download_info_tx = self.download_info_tx.clone();
-            let client_id = oauth_info.user_id();
+            let user_id = oauth_info.user_id();
             let access_token = oauth_info
                 .access_token()
                 .ok_or("Access token not found".to_string())?;
@@ -101,23 +104,19 @@ impl OAuthClient {
                 .await
                 {
                     Ok((resource, job_id)) => {
-                        match poll_archive_state(oauth_client.clone(), job_id.clone(), access_token)
-                            .await
-                        {
-                            Ok(download_url) => download_info_tx
-                                .send(((client_id, resource), Ok(download_url)))
-                                .map_err(|e| format!("Error sending download info: {}", e)),
-                            Err(e) => download_info_tx
-                                .send(((client_id, resource), Err(e)))
-                                .map_err(|e| format!("Error sending download info: {}", e)),
-                        }
+                        let res =
+                            poll_archive_state(oauth_client.clone(), job_id.clone(), access_token)
+                                .await;
+                        download_info_tx
+                            .send((user_id, resource, res))
+                            .map_err(|e| format!("Error sending download info: {}", e))
                     }
                     Err(e) => download_info_tx
-                        .send(((client_id, resource.to_string()), Err(e)))
+                        .send((user_id, resource.to_string(), Err(e)))
                         .map_err(|e| format!("Error sending download info: {}", e)),
                 }
             });
-            oauth_info.update_granted_resource_state(resource, ResourceState::Initiated);
+            oauth_info.update_granted_resource_state(resource, ResourceState::Initiated)?;
         }
 
         Ok(())
@@ -190,8 +189,14 @@ async fn poll_archive_state(
     let poll_archive_state_url = GetArchiveStateUrl::new(job_id.clone(), params).as_url();
 
     let mut interval = interval(Duration::from_secs(10));
+    let start_polling = Instant::now();
     loop {
-        println!("Checking state for job ID: {}", job_id);
+        // TODO: make sure this polling ends after "enough" retries
+        println!(
+            "Polling state of job ID: {}. Started {:?} ago",
+            job_id,
+            start_polling.elapsed()
+        );
         interval.tick().await;
 
         let response = oauth_client
@@ -211,8 +216,8 @@ async fn poll_archive_state(
                 );
                 return Ok(download_url);
             }
-            Ok(GetArchiveStateResponsePayload::InProgress(_)) => {
-                println!("Job with ID {} still in progress", job_id);
+            Ok(GetArchiveStateResponsePayload::InProgress(response)) => {
+                println!("Job with ID {} in state: {:?}", job_id, response.state());
             }
             Err(e) => {
                 // TODO: distinguish the case in which the server returns an error

@@ -2,7 +2,7 @@ use actix_web::web;
 use api::{get_auth_api, post_auth_api};
 
 mod api;
-mod handlers;
+pub mod handlers;
 pub mod types;
 
 pub fn auth_config(cfg: &mut web::ServiceConfig) {

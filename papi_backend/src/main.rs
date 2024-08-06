@@ -2,11 +2,11 @@ use actix_cors::Cors;
 use actix_web::{web::Data, App, HttpServer};
 use api::{
     auth_config,
-    types::{OAuthInfo, ResourceState, UserStateMap},
+    handlers::{handle_data_archive, handle_data_download},
+    types::{OAuthInfo, UserStateMap},
 };
+use auth_db_client::AuthDbClient;
 use dotenv::dotenv;
-use futures::TryStreamExt;
-use mongodb::{bson::doc, Client};
 use oauth_client::OAuthClient;
 use papi_line_client::PapiLineClient;
 use rustls::{Certificate, PrivateKey, ServerConfig};
@@ -18,12 +18,11 @@ use tokio::{
 };
 
 mod api;
+mod auth_db_client;
 mod oauth_client;
 mod papi_line_client;
 
 const REQUESTED_RESOURCES: [&str; 2] = ["myactivity.search", "myactivity.shopping"];
-const AUTH_DB_NAME: &str = "papi_auth_db";
-const AUTH_COLL_NAME: &str = "user_authorizations";
 
 fn load_certs() -> Result<ServerConfig, String> {
     let cert_file = &mut BufReader::new(
@@ -58,25 +57,6 @@ fn load_certs() -> Result<ServerConfig, String> {
         .map_err(|e| e.to_string())
 }
 
-async fn authorization_db_setup() -> Result<Client, String> {
-    let auth_db_uri =
-        std::env::var("AUTHORIZATION_DB_URI").map_err(|_| "AUTHORIZATION_DB_URI must be set")?;
-
-    let client = Client::with_uri_str(auth_db_uri)
-        .await
-        .map_err(|e| format!("failed to connect to DB: {:?}", e.to_string()))?;
-
-    client
-        .database(AUTH_DB_NAME)
-        .create_collection(AUTH_COLL_NAME)
-        .await
-        .map_err(|e| format!("failed to create collection: {:?}", e))?;
-
-    println!("Created collection {}", AUTH_COLL_NAME);
-
-    Ok(client)
-}
-
 #[actix_web::main]
 async fn main() -> Result<(), String> {
     dotenv().ok();
@@ -85,8 +65,6 @@ async fn main() -> Result<(), String> {
     // `openssl req -x509 -newkey rsa:4096 -nodes -keyout key.pem -out cert.pem -days 365 -subj '/CN=localhost'`
     // these are stored in the root cargo directory as "key.pem" and "cert.pem"
     let tls_config = load_certs()?;
-
-    let auth_db_client = authorization_db_setup().await?;
 
     // app state initialized inside the closure passed to HttpServer::new is local to the worker thread and may become de-synced if modified
     // to achieve globally shared state, it must be created outside of the closure passed to HttpServer::new and moved/cloned in
@@ -99,12 +77,13 @@ async fn main() -> Result<(), String> {
     let authorization_tx = Data::new(authorization_tx);
 
     let (download_info_tx, mut download_info_rx): (
-        UnboundedSender<((String, String), Result<String, String>)>,
-        UnboundedReceiver<((String, String), Result<String, String>)>,
+        UnboundedSender<(String, String, Result<String, String>)>,
+        UnboundedReceiver<(String, String, Result<String, String>)>,
     ) = tokio::sync::mpsc::unbounded_channel();
 
     let oauth_client = OAuthClient::new(download_info_tx);
     let papi_line_client = PapiLineClient::new();
+    let auth_db_client = AuthDbClient::setup().await?;
 
     let authorizations_cl = Data::clone(&authorizations);
     tokio::spawn(async move {
@@ -135,49 +114,21 @@ async fn main() -> Result<(), String> {
 
     loop {
         select! {
-            Some(mut oauth_info) = authorization_rx.recv() => {
-                // convert authorization code to access token
-                match oauth_client.convert_authorization_to_access_token(&mut oauth_info).await {
-                    Ok(()) => {
-                        if let Err(e) = oauth_client.initiate_data_archives(&mut oauth_info) {
-                            println!("Error initializing data archives: {}", e);
-                        }
-                        print!("OAuth info pre store: {:?}", oauth_info);
-                        if let Err(e) = auth_db_client.database(AUTH_DB_NAME).collection(AUTH_COLL_NAME).insert_one(oauth_info).await {
-                            println!("Error storing OAuth info: {:?}", e);
-                        }
-                    },
-                    Err(e) => {
-                        println!("Error converting authorization code to access token: {:?}", e);
-                    }
+            Some(oauth_info) = authorization_rx.recv() => {
+                if let Err(e) = handle_data_archive(&auth_db_client, &oauth_client, oauth_info).await {
+                    println!("Error handling data archive: {:?}", e);
                 }
             },
-            Some(((user_id, ready_to_download_resource), resource_res)) = download_info_rx.recv() => {
-                if let Ok(download_url) = &resource_res {
-                    if let Ok(mut cursor) = auth_db_client.database(AUTH_DB_NAME).collection::<OAuthInfo>(AUTH_COLL_NAME).find(doc! {"user_id": user_id.clone()}).sort(doc! { "created_at": -1 }).limit(1).await {
-                        if let Ok(Some(mut oauth_info)) = cursor.try_next().await {
-                            if oauth_info.is_expired_access_token().is_some_and(|b| b == false) && oauth_info.is_expected_resource_state(&ready_to_download_resource, &ResourceState::Initiated).is_ok_and(|b| b == true) {
-                                let _ = papi_line_client.download_file(user_id.clone(), &ready_to_download_resource, download_url).await;
-                                if let Err(e) = oauth_info.update_granted_resource_state(&ready_to_download_resource, ResourceState::Downloaded) {
-                                    println!("Error updating resource state: {:?}", e);
-                                }
-                                if oauth_info.is_all_resources_downloaded() {
-                                    println!("All resources downloaded, resetting authorization for user {}", user_id);
-                                    if let Err(e) = oauth_client.reset_authorization(&mut oauth_info).await {
-                                        println!("Error resetting authorization: {:?}", e);
-                                    }
-                                }
-                                if let Err(e) = auth_db_client.database(AUTH_DB_NAME).collection(AUTH_COLL_NAME).replace_one(doc! {"user_id": user_id.clone()}, oauth_info).await {
-                                    println!("Error storing updated OAuth info: {:?}", e);
-                                }
-                            } else {
-                                println!("Latest access token expired or resource not in expected state: {:?}", oauth_info);
-                            }
-                        }
-                        }
-                } else {
-                    println!("Error getting download URL: {:?}", resource_res);
-                }
+            Some((user_id, ready_to_download_resource, resource_res)) = download_info_rx.recv() => {
+                if let Err(e) = handle_data_download(
+                    &auth_db_client,
+                    &papi_line_client,
+                    &oauth_client,
+                    user_id,
+                    ready_to_download_resource,
+                    resource_res).await {
+                        println!("Error handling data download: {:?}", e);
+                    }
             },
             _ = signal::ctrl_c() => {
                 println!("Shutting down server...");

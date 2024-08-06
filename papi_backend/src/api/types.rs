@@ -105,8 +105,8 @@ impl OAuthInfo {
         });
     }
 
-    pub fn is_expired_access_token(&self) -> Option<bool> {
-        self.access_token.as_ref().map(|a| a.is_expired())
+    pub fn is_not_expired_access_token(&self) -> Option<bool> {
+        self.access_token.as_ref().map(|a| !a.is_expired())
     }
 
     pub fn is_expected_resource_state(

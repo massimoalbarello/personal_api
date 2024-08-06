@@ -237,6 +237,7 @@ impl<'de> Deserialize<'de> for GetArchiveStateResponsePayload {
     {
         let value = Value::deserialize(deserializer)?;
 
+        // we have to first check if the response deserializes to the 'Completed' variant because the 'InProgress' variant will match both itself and the 'Completed' variant (as 'ArchiveInProgressResponsePayload' is a subset of 'ArchiveCompleteResponsePayload')
         if let Ok(response) = ArchiveCompleteResponsePayload::deserialize(&value) {
             return Ok(GetArchiveStateResponsePayload::Completed(response));
         }
