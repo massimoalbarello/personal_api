@@ -1,13 +1,11 @@
+use aws_sdk_s3::{primitives::ByteStream, Client as S3Client};
 use chrono::Utc;
-use reqwest::header::CONTENT_TYPE;
-use reqwest::{Client, Response};
-use std::env;
-use std::fs::File;
-use std::io::{self, Cursor};
-use std::path::Path;
+use reqwest::{Client as ReqwestClient, Response};
+use std::error::Error;
+use std::io::Cursor;
+use std::{env, io::Read};
 use zip::read::ZipArchive;
 
-const USERS_DATALAKE: &str = "./users_datalake";
 const ZIP_MIME_TYPES: [&str; 4] = [
     "application/zip",
     "application/x-zip",
@@ -16,13 +14,18 @@ const ZIP_MIME_TYPES: [&str; 4] = [
 ];
 
 pub struct PapiLineClient {
-    client: Client,
+    request_client: ReqwestClient,
+    s3_client: aws_sdk_s3::Client,
 }
 
 impl PapiLineClient {
-    pub fn new() -> Self {
+    pub async fn setup() -> Self {
+        let config = aws_config::load_from_env().await;
+        let s3_client = S3Client::new(&config);
+
         Self {
-            client: Client::new(),
+            request_client: ReqwestClient::new(),
+            s3_client,
         }
     }
 
@@ -34,7 +37,7 @@ impl PapiLineClient {
         });
 
         let _response = self
-            .client
+            .request_client
             .post(
                 env::var("PAPI_LINE_SERVER_ENDPOINT")
                     .expect("PAPI_LINE_SERVER_ENDPOINT must be set"),
@@ -49,9 +52,9 @@ impl PapiLineClient {
         user_id: String,
         resource: &String,
         url: &str,
-    ) -> Result<Vec<String>, String> {
+    ) -> Result<(), String> {
         let response = self
-            .client
+            .request_client
             .get(url)
             .send()
             .await
@@ -59,51 +62,56 @@ impl PapiLineClient {
 
         let content_type = response
             .headers()
-            .get(CONTENT_TYPE)
+            .get("content-type")
             .map(|v| v.to_str().unwrap_or(""))
             .unwrap_or("");
 
         if ZIP_MIME_TYPES.contains(&content_type) {
             println!("Unzipping files for resource: {}", resource);
-            let filenames = unzip_and_flatten(&user_id, resource, response)
+            self.unzip_and_flatten(&user_id, resource, response)
                 .await
-                .map_err(|e| format!("could not unzip files: {:?}", e.to_string()))?;
-            Ok(filenames)
+                .map_err(|e| format!("could not unzip files: {:?}", e.to_string()))
         } else {
             Err(format!("file is not a ZIP file:{:?}", response.headers()))
         }
     }
-}
 
-async fn unzip_and_flatten(
-    user_id: &str,
-    resource: &String,
-    response: Response,
-) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let mut zip = ZipArchive::new(Cursor::new(response.bytes().await?))?;
-    let mut filenames = Vec::new();
+    async fn unzip_and_flatten(
+        &self,
+        user_id: &str,
+        resource: &String,
+        response: Response,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut zip = ZipArchive::new(Cursor::new(response.bytes().await?))?;
 
-    for i in 0..zip.len() {
-        let mut file = zip.by_index(i)?;
+        for i in 0..zip.len() {
+            let mut file = zip.by_index(i)?;
 
-        if let Some(filename) = file.name().split('/').last() {
-            println!("Extracting file: {:?}", filename);
-            let filename = format!(
-                "{}_{}_{}_{}",
-                Utc::now().timestamp(),
-                user_id,
-                resource,
-                filename
-            );
-            let file_path = Path::new(USERS_DATALAKE).join(&filename);
+            if let Some(filename) = file.name().split('/').last() {
+                println!("Extracting file: {:?}", filename);
+                let filename = format!(
+                    "{}_{}_{}_{}",
+                    Utc::now().timestamp(),
+                    user_id,
+                    resource,
+                    filename
+                );
+                let mut buffer = Vec::new();
+                file.read_to_end(&mut buffer)?;
 
-            let mut outfile = File::create(&file_path)?;
-            io::copy(&mut file, &mut outfile)?;
-            filenames.push(filename);
-        } else {
-            println!("Error parsing file path: {:?}", file.name());
+                let body = ByteStream::from(buffer);
+                self.s3_client
+                    .put_object()
+                    .bucket(env::var("S3_BUCKET_NAME").expect("S3_BUCKET_NAME must be set"))
+                    .key(filename)
+                    .body(body)
+                    .send()
+                    .await
+                    .unwrap();
+            } else {
+                println!("Error parsing file path: {:?}", file.name());
+            }
         }
+        Ok(())
     }
-
-    Ok(filenames)
 }
