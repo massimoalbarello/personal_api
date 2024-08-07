@@ -1,3 +1,6 @@
+use aws_sdk_s3::error::SdkError;
+use aws_sdk_s3::operation::create_bucket::{CreateBucketError, CreateBucketOutput};
+use aws_sdk_s3::types::{BucketLocationConstraint, CreateBucketConfiguration};
 use aws_sdk_s3::{primitives::ByteStream, Client as S3Client};
 use chrono::Utc;
 use reqwest::{Client as ReqwestClient, Response};
@@ -13,38 +16,63 @@ const ZIP_MIME_TYPES: [&str; 4] = [
     "multipart/x-zip",
 ];
 
+async fn create_bucket(
+    client: &S3Client,
+    bucket: &str,
+    region: &str,
+) -> Result<CreateBucketOutput, SdkError<CreateBucketError>> {
+    let constraint = BucketLocationConstraint::from(region);
+    let cfg = CreateBucketConfiguration::builder()
+        .location_constraint(constraint)
+        .build();
+
+    client
+        .create_bucket()
+        .create_bucket_configuration(cfg)
+        .bucket(bucket)
+        .send()
+        .await
+}
+
 pub struct PapiLineClient {
     request_client: ReqwestClient,
     s3_client: aws_sdk_s3::Client,
+    bucket_name: String,
 }
 
 impl PapiLineClient {
-    pub async fn setup() -> Self {
+    pub async fn setup() -> Result<Self, String> {
+        let bucket_name = env::var("S3_BUCKET_NAME").expect("S3_BUCKET_NAME must be set");
+
         let config = aws_config::load_from_env().await;
         let s3_client = S3Client::new(&config);
 
-        Self {
+        if !s3_client
+            .list_buckets()
+            .send()
+            .await
+            .map_err(|e| format!("Error listing buckets: {}", e.to_string()))?
+            .buckets()
+            .iter()
+            .any(|b| b.name() == Some(&bucket_name))
+        {
+            create_bucket(
+                &s3_client,
+                &bucket_name,
+                env::var("AWS_REGION")
+                    .expect("AWS_REGION must be set")
+                    .as_str(),
+            )
+            .await
+            .map_err(|e| format!("Error creating table: {}", e))?;
+            println!("Created bucket: {}", bucket_name);
+        }
+
+        Ok(Self {
             request_client: ReqwestClient::new(),
             s3_client,
-        }
-    }
-
-    pub async fn post_download_urls(&self, user_id: &str, resource: &str, download_url: &str) {
-        let body = serde_json::json!({
-            "id": user_id,
-            "resource": resource,
-            "url": download_url
-        });
-
-        let _response = self
-            .request_client
-            .post(
-                env::var("PAPI_LINE_SERVER_ENDPOINT")
-                    .expect("PAPI_LINE_SERVER_ENDPOINT must be set"),
-            )
-            .json(&body)
-            .send()
-            .await;
+            bucket_name,
+        })
     }
 
     pub async fn download_file(
@@ -102,12 +130,11 @@ impl PapiLineClient {
                 let body = ByteStream::from(buffer);
                 self.s3_client
                     .put_object()
-                    .bucket(env::var("S3_BUCKET_NAME").expect("S3_BUCKET_NAME must be set"))
+                    .bucket(&self.bucket_name)
                     .key(filename)
                     .body(body)
                     .send()
-                    .await
-                    .unwrap();
+                    .await?;
             } else {
                 println!("Error parsing file path: {:?}", file.name());
             }

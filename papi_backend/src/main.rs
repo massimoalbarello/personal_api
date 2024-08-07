@@ -82,7 +82,7 @@ async fn main() -> Result<(), String> {
     ) = tokio::sync::mpsc::unbounded_channel();
 
     let oauth_client = OAuthClient::new(download_info_tx);
-    let papi_line_client = PapiLineClient::setup().await;
+    let papi_line_client = PapiLineClient::setup().await?;
     let auth_db_client = AuthDbClient::setup().await?;
 
     let authorizations_cl = Data::clone(&authorizations);
